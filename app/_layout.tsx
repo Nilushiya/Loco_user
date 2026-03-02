@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { Provider, useDispatch, useSelector } from 'react-redux';
-import { store } from '../redux/store';
-import * as SecureStore from 'expo-secure-store';
-import { authSuccess, logout } from '../redux/slices/authSlice';
-import { ActivityIndicator, View } from 'react-native';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useColorScheme } from 'react-native';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, useColorScheme, View } from 'react-native';
+import { Provider, useDispatch, useSelector } from 'react-redux';
+import { authSuccess } from '../redux/slices/authSlice';
+import { store } from '../redux/store';
 
 function RootLayoutNav() {
   const { token, role } = useSelector((state: any) => state.auth);
@@ -39,20 +38,23 @@ function RootLayoutNav() {
 
   // 2. Role-Based Navigation Logic
   useEffect(() => {
-    if (!isReady) return; // Don't navigate until we've checked SecureStore
+    if (!isReady) return;
 
-    const inAuthGroup = (segments[0] as string) === '(auth)';
+    const inAuthGroup = segments[0] === '(auth)';
+    const inUserGroup = segments[0] === '(user)';
 
-    if (!token) {
-      // If no token, force user to Login
+    // Temporary hardcoded credentials for testing (shadows Redux state)
+    const testToken = '123';
+    const testRole = 'User';
+
+    if (!testToken) {
       if (!inAuthGroup) {
-       router.replace('/(auth)/login' as any);
+        router.replace('/(auth)/login' as any);
       }
     } else {
-      // If token exists, direct them to their specific folder
-      if (role === 'User') {
+      if (testRole === 'User' && !inUserGroup) {
         router.replace('/(user)' as any);
-      } 
+      }
     }
   }, [token, role, isReady, segments]);
 
@@ -67,9 +69,9 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(user)" />
-    </Stack>
+      <Stack screenOptions={{ headerShown: false }} />
+      {/* <Stack.Screen name="(user)" /> */}
+      {/* </Stack> */}
     </ThemeProvider>
   );
 }
