@@ -34,6 +34,34 @@ const SignupScreen = ({ navigation }: SignupScreenProps) => {
     confirmPassword?: string;
   }>({});
 
+  const handleUsernameChange = (text: string) => {
+    setUsername(text);
+    if (errors.username) {
+      setErrors((prev) => ({ ...prev, username: undefined }));
+    }
+  };
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (errors.email) {
+      setErrors((prev) => ({ ...prev, email: undefined }));
+    }
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);  
+    if (errors.password) {
+      setErrors((prev) => ({ ...prev, password: undefined }));
+    }
+  };
+
+  const handleConfirmPasswordChange = (text: string) => {
+    setConfirmPassword(text);
+    if (errors.confirmPassword) {
+      setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+    }
+  };
+
   const validate = () => {
     let newErrors: {
       username?: string;
@@ -41,44 +69,55 @@ const SignupScreen = ({ navigation }: SignupScreenProps) => {
       password?: string;
       confirmPassword?: string;
     } = {};
+    let isValid = true;
 
     // Username
     if (!username) {
       newErrors.username = "Username is required";
+      isValid = false;
     } else if (username.length < 3) {
       newErrors.username = "Minimum 3 characters required";
+      isValid = false;
     } else if (!/^[a-zA-Z0-9]+$/.test(username)) {
       newErrors.username = "Only letters and numbers allowed";
+      isValid = false;
     }
 
     // Email
     if (!email) {
       newErrors.email = "Email is required";
+      isValid = false;
     } else if (!/^\S+@\S+\.\S+$/.test(email)) {
       newErrors.email = "Invalid email format";
+      isValid = false;
     }
 
     // Password
     if (!password) {
       newErrors.password = "Password is required";
+      isValid = false;
     } else if (password.length < 8) {
       newErrors.password = "Minimum 8 characters required";
+      isValid = false;
     } else if (
       !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/.test(password)
     ) {
       newErrors.password =
         "Must include uppercase, lowercase, number & special character";
+      isValid = false;
     }
 
     // Confirm Password
     if (!confirmPassword) {
       newErrors.confirmPassword = "Confirm password is required";
+
     } else if (password !== confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
+      isValid = false;
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return isValid;
   };
 
   const handleRegister = async () => {
@@ -109,9 +148,10 @@ return (
         />
         <TextInput
           placeholder="Username"
+          placeholderTextColor="#999"
           style={styles.input}
           value={username}
-          onChangeText={setUsername}
+          onChangeText={handleUsernameChange}
         />
         {errors.username && (
           <Text style={styles.error}>{errors.username}</Text>
@@ -119,18 +159,20 @@ return (
 
         <TextInput
           placeholder="Email"
+          placeholderTextColor="#999"
           style={styles.input}
           value={email}
-          onChangeText={setEmail}
+          onChangeText={handleEmailChange}
         />
         {errors.email && <Text style={styles.error}>{errors.email}</Text>}
 
         <TextInput
           placeholder="Password"
+          placeholderTextColor="#999"
           secureTextEntry
           style={styles.input}
           value={password}
-          onChangeText={setPassword}
+          onChangeText={handlePasswordChange}
         />
         {errors.password && (
           <Text style={styles.error}>{errors.password}</Text>
@@ -138,10 +180,11 @@ return (
 
         <TextInput
           placeholder="Confirm Password"
+          placeholderTextColor="#999"
           secureTextEntry
           style={styles.input}
           value={confirmPassword}
-          onChangeText={setConfirmPassword}
+          onChangeText={handleConfirmPasswordChange}
         />
         {errors.confirmPassword && (
           <Text style={styles.error}>{errors.confirmPassword}</Text>
@@ -174,12 +217,12 @@ return (
           </TouchableOpacity>
         </View>
       </View>
-      <View style={styles.SignupBtn}>
+      {/* <View style={styles.SignupBtn}>
         <TouchableOpacity onPress={() => router.push("/login")}>
           <AntDesign name="up" size={15} color="white" style={styles.upArrow}/>
           <Text style={[styles.signup, {color:"white"}]}>Sign In</Text>
         </TouchableOpacity>
-      </View>
+      </View> */}
       </ScrollView>
     </LinearGradient>
   );

@@ -1,14 +1,13 @@
 import { Platform } from 'react-native';
-import { EXPO_PUBLIC_WEB_API_URL, EXPO_PUBLIC_MOBILE_API_URL, EXPO_PUBLIC_PROD_API_URL } from '@env';
 /**
  * APP CONFIGURATION
  * Handles environment switching between Development and Production.
  */
 
 // Load from .env
-const WEB_API_URL = EXPO_PUBLIC_WEB_API_URL;       // for web (localhost)
-const MOBILE_API_URL = EXPO_PUBLIC_MOBILE_API_URL; // for mobile devices
-const PROD_API_URL = EXPO_PUBLIC_PROD_API_URL;     // for production server
+const WEB_API_URL = process.env.EXPO_PUBLIC_WEB_API_URL;       // for web (localhost)
+const MOBILE_API_URL = process.env.EXPO_PUBLIC_MOBILE_API_URL; // for mobile devices
+const PROD_API_URL = process.env.EXPO_PUBLIC_PROD_API_URL;     // for production server
 
 // Determine current environment
 const ENV = {
@@ -24,7 +23,7 @@ const ENV = {
 // This prevents the app from running if the developer forgot to set up the .env
 if (!ENV.apiUrl) {
   const errorMsg = `CONFIG ERROR: EXPO_PUBLIC_API_URL is not defined. 
-  Check your .env.${__DEV__ ? 'dev' : 'prod'} file.`;
+  Check your .env.${__DEV__ ? 'development' : 'production'} file.`;
   
   if (__DEV__) {
     console.error(errorMsg);
