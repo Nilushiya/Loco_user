@@ -1,4 +1,4 @@
-import { NavigationProp, useNavigation } from "@react-navigation/native";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   FlatList,
@@ -9,10 +9,7 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
-
-type RootStackParamList = {
-  CategoryPage: { name: string };
-};
+import { Ionicons } from "@expo/vector-icons";
 
 const userName = "Nilushiya"; // Replace with dynamic user data
 
@@ -88,11 +85,18 @@ const offers = [
 ];
 
 const Dashboard = () => {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const router = useRouter();
 
   // Navigate to category page
   const handleCategoryPress = (categoryName: string) => {
-    navigation.navigate("CategoryPage", { name: categoryName });
+    router.push({
+      pathname: "/(user)/search-results",
+      params: { q: categoryName, from: "index" },
+    });
+  };
+
+  const handleSearchPress = () => {
+    router.push("/(user)/search");
   };
 
   return (
@@ -111,6 +115,15 @@ const Dashboard = () => {
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={styles.searchBar}
+          onPress={handleSearchPress}
+        >
+          <Ionicons name="search-outline" size={18} color="#777" />
+          <Text style={styles.searchPlaceholder}>Search for food or restaurants</Text>
+        </TouchableOpacity>
+
         {/* Categories Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Food Categories</Text>
@@ -182,6 +195,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 5,
     color: "#555",
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f7f7f7",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginHorizontal: 15,
+    marginTop: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#f0f0f0",
+  },
+  searchPlaceholder: {
+    marginLeft: 8,
+    color: "#888",
+    fontSize: 13,
   },
   button: {
     position: "absolute",
