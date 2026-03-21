@@ -3,7 +3,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function UserLayout() {
   return (
-    <Tabs screenOptions={{ tabBarActiveTintColor: "#FF7A00", } }
+    <Tabs
+      backBehavior="history"
+      screenOptions={{ tabBarActiveTintColor: "#FF7A00" }}
      >
       <Tabs.Screen  
         name="index" // This is the Dashboard
