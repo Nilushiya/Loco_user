@@ -1,8 +1,10 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { CartProvider } from '../../context/CartContext';
 
 export default function UserLayout() {
   return (
+    <CartProvider>
     <Tabs screenOptions={{ tabBarActiveTintColor: "#FF7A00", } }
      >
       <Tabs.Screen  
@@ -68,6 +70,14 @@ export default function UserLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="cart"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
+    </CartProvider>
   );
 }
