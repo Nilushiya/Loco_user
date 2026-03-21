@@ -4,8 +4,7 @@ import { CartProvider } from '../../context/CartContext';
 
 export default function UserLayout() {
   return (
-    <CartProvider>
-    <Tabs screenOptions={{ tabBarActiveTintColor: "#FF7A00", } }
+    <Tabs backBehavior="history" screenOptions={{ tabBarActiveTintColor: "#FF7A00", } }
      >
       <Tabs.Screen  
         name="index" // This is the Dashboard
