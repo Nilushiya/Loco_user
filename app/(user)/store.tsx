@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   Image,
   ScrollView,
@@ -10,18 +10,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  CartItem,
-  clearCart,
-  getCart,
-  saveCart,
-} from "../../utils/cartStorage";
+import { useCart } from "../../context/CartContext";
 
 const hero =
   "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=800&q=80";
 
-const storeMenus = {
-  s1: [
+type MenuItem = { id: string; name: string; price: string; rating: string; reviews: string; image: string };
+const storeMenus: Record<string, MenuItem[]> = {
+  s3: [
     {
       id: "m1",
       name: "Chicken Kottu",
@@ -30,8 +26,33 @@ const storeMenus = {
       reviews: "500+",
       image: "https://images.unsplash.com/photo-1622396481228-34b4c4b29f70",
     },
+    {
+      id: "m2",
+      name: "Chicken chees Kottu",
+      price: "LKR 990.00",
+      rating: "94%",
+      reviews: "500+",
+      image: "https://images.unsplash.com/photo-1622396481228-34b4c4b29f70",
+    },
+    {
+      id: "m3",
+      name: "Roasted Chicken Kottu",
+      price: "LKR 990.00",
+      rating: "94%",
+      reviews: "500+",
+      image: "https://images.unsplash.com/photo-1622396481228-34b4c4b29f70",
+    },
+    {
+      id: "m4",
+      name: "Curry Chicken Kottu",
+      price: "LKR 990.00",
+      rating: "94%",
+      reviews: "500+",
+      image: "https://images.unsplash.com/photo-1622396481228-34b4c4b29f70",
+    },
+
   ],
-  s3: [
+  s1: [
     {
       id: "m4",
       name: "Chicken Fried Rice",
@@ -45,6 +66,7 @@ const storeMenus = {
 
 const StoreScreen = () => {
   const router = useRouter();
+  const { cart, addItem, removeItem } = useCart();
   const navigation = useNavigation<any>();
 
   const params = useLocalSearchParams<{
@@ -63,100 +85,31 @@ const StoreScreen = () => {
 
   const menu = storeMenus[storeId] || storeMenus["s1"];
 
-  const [cart, setCart] = useState<Record<string, CartItem>>({});
-
-  useEffect(() => {
-    const loadCart = async () => {
-      const stored = await getCart();
-
-      if (stored) {
-        if (stored.storeId !== storeId) {
-          await clearCart();
-          setCart({});
-        } else {
-          setCart(stored.items);
-        }
-      }
-    };
-
-    loadCart();
-  }, []);
-
   const getQty = (itemId: string) => {
+    if (!cart || cart.storeId !== storeId) return 0;
     const key = `${storeId}-${itemId}`;
-    return cart[key]?.quantity || 0;
+    return cart.items[key]?.quantity || 0;
   };
 
-  const addItem = async (item) => {
-    const key = `${storeId}-${item.id}`;
-
+  const handleAdd = (item: { id: string; name: string; price: string; image: string }) => {
     const price = Number(item.price.replace(/[^0-9.]/g, ""));
-
-    setCart((prev) => {
-      const existing = prev[key];
-
-      const updated = {
-        ...prev,
-        [key]: {
-          id: item.id,
-          name: item.name,
-          price,
-          image: item.image,
-          quantity: existing ? existing.quantity + 1 : 1,
-        },
-      };
-
-      saveCart({
-        storeId,
-        storeName: name,
-        storeArea: area,
-        items: updated,
-      });
-
-      return updated;
-    });
+    addItem(storeId, name, area, { id: item.id, name: item.name, price, image: item.image });
   };
 
-  const removeItem = async (item) => {
-    const key = `${storeId}-${item.id}`;
-
-    setCart((prev) => {
-      const existing = prev[key];
-      if (!existing) return prev;
-
-      const updated = { ...prev };
-
-      if (existing.quantity <= 1) {
-        delete updated[key];
-      } else {
-        updated[key] = {
-          ...existing,
-          quantity: existing.quantity - 1,
-        };
-      }
-
-      saveCart({
-        storeId,
-        storeName: name,
-        storeArea: area,
-        items: updated,
-      });
-
-      return updated;
-    });
+  const handleRemove = (item: { id: string }) => {
+    removeItem(storeId, item.id);
   };
 
   const cartSummary = useMemo(() => {
+    if (!cart || cart.storeId !== storeId) return { totalItems: 0, totalAmount: 0 };
     let totalItems = 0;
     let totalAmount = 0;
-
-    Object.values(cart).forEach((item) => {
+    Object.values(cart.items).forEach((item) => {
       totalItems += item.quantity;
       totalAmount += item.quantity * item.price;
     });
-
     return { totalItems, totalAmount };
-  }, [cart]);
+  }, [cart, storeId]);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
@@ -205,20 +158,20 @@ const StoreScreen = () => {
 
                 {qty > 0 ? (
                   <View style={styles.stepper}>
-                    <TouchableOpacity onPress={() => removeItem(item)}>
+                    <TouchableOpacity onPress={() => handleRemove(item)}>
                       <Text style={styles.stepText}>-</Text>
                     </TouchableOpacity>
 
                     <Text style={styles.qty}>{qty}</Text>
 
-                    <TouchableOpacity onPress={() => addItem(item)}>
+                    <TouchableOpacity onPress={() => handleAdd(item)}>
                       <Text style={styles.stepText}>+</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
                   <TouchableOpacity
                     style={styles.addBtn}
-                    onPress={() => addItem(item)}
+                    onPress={() => handleAdd(item)}
                   >
                     <Text style={styles.addTxt}>Add +</Text>
                   </TouchableOpacity>
@@ -236,13 +189,18 @@ const StoreScreen = () => {
               {cartSummary.totalItems} Items
             </Text>
             <Text style={{ color: "#fff", fontWeight: "700" }}>
-              LKR {cartSummary.totalAmount}
+              LKR {cartSummary.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </Text>
           </View>
 
           <TouchableOpacity
             style={styles.cartBtn}
-            onPress={() => router.push("/(user)/cart")}
+            onPress={() =>
+              router.push({
+                pathname: "/(user)/cart",
+                params: { from: "store", id: storeId, name, area, q, origin: from },
+              })
+            }
           >
             <Text style={{ fontWeight: "700" }}>View Cart</Text>
           </TouchableOpacity>

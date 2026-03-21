@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Image,
   ScrollView,
@@ -9,8 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { saveCart, getCart, clearCart } from "../../utils/cartStorage";
-import type { CartItem } from "../../utils/cartStorage";
+import { useCart } from "../../context/CartContext";
 
 type MenuItem = {
   id: string;
@@ -71,7 +70,7 @@ const stores: Store[] = [
     fee: "LKR 139.00",
     logo: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=120&q=80",
     highlight: "Combo Deal",
-    available: false,
+    available: true,
     items: [
       {
         id: "m2",
@@ -81,7 +80,7 @@ const stores: Store[] = [
         reviews: "100+",
         image: "https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=200&q=80",
         tags: ["kottu", "chicken"],
-        available: false,
+        available: true,
       },
       {
         id: "m3",
@@ -91,7 +90,7 @@ const stores: Store[] = [
         reviews: "200+",
         image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
         tags: ["kottu", "cheese"],
-        available: false,
+        available: true,
       },
     ],
   },
@@ -104,7 +103,7 @@ const stores: Store[] = [
     eta: "45 - 55 min",
     fee: "LKR 99.00",
     logo: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=120&q=80",
-    available: false,
+    available: true,
     items: [
       {
         id: "m4",
@@ -114,7 +113,27 @@ const stores: Store[] = [
         reviews: "500+",
         image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
         tags: ["rice", "chicken"],
-        available: false,
+        available: true,
+      },
+      {
+        id: "m2",
+        name: "Roasted Chicken Kottu",
+        price: "LKR 1,500.00",
+        rating: "72%",
+        reviews: "100+",
+        image: "https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=200&q=80",
+        tags: ["kottu", "chicken"],
+        available: true,
+      },
+      {
+        id: "m3",
+        name: "Cheese Kottu",
+        price: "LKR 1,250.00",
+        rating: "80%",
+        reviews: "200+",
+        image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
+        tags: ["kottu", "cheese"],
+        available: true,
       },
     ],
   },
@@ -127,19 +146,9 @@ const SearchResultsScreen = () => {
   const origin = (params.from || "search").toString();
   const searchTerm = keyword.trim();
   const lower = searchTerm.toLowerCase();
-  const [cart, setCart] = useState<Record<string, CartItem>>({});
+  const { cart: cartData, addItem: addToCart, removeItem: removeFromCart } = useCart();
   const [toast, setToast] = useState<string | null>(null);
-  
-  useEffect(() => {
-    const loadCart = async () => {
-      const stored = await getCart();
-      if (stored?.items) {
-        setCart(stored.items);
-      }
-    };
-    loadCart();
-  }, []);
-  
+
   const goBackSafe = () => {
     console.log("Go back safe triggered. Origin:", origin);
     if (origin === "index") {
@@ -174,83 +183,34 @@ const SearchResultsScreen = () => {
     });
   }, [searchTerm, lower]);
 
-  const getQty = (key: string) => cart[key]?.quantity || 0;
+  const getQty = (key: string) => cartData?.items[key]?.quantity || 0;
 
-  // const addItem = (key: string, label: string) => {
-  //   setCart((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
-  //   setToast(`${label} has been added to your cart.`);
-  //   setTimeout(() => setToast(null), 1500);
-  // };
-  const addItem = async (store: Store, item: MenuItem) => {
-    const key = `${store.id}-${item.id}`;
-    const stored = await getCart();
-
-    if (stored && stored.storeId !== store.id) {
-      await clearCart();
-      setCart({});
-    }
-
-    setCart((prev) => {
-      const existing = prev[key];
-      const price = Number(item.price.replace(/[^0-9.]/g, ""));
-      const updated: Record<string, CartItem> = {
-        ...prev,
-        [key]: {
-          id: item.id,
-          name: item.name,
-          price: isNaN(price) ? 0 : price,
-          image: item.image,
-          quantity: existing ? existing.quantity + 1 : 1,
-        },
-      };
-
-      saveCart({
-        storeId: store.id,
-        storeName: store.name,
-        storeArea: store.area,
-        items: updated,
-      });
-
-      return updated;
+  const addItem = (store: Store, item: MenuItem) => {
+    const price = Number(item.price.replace(/[^0-9.]/g, ""));
+    addToCart(store.id, store.name, store.area, {
+      id: item.id,
+      name: item.name,
+      price: isNaN(price) ? 0 : price,
+      image: item.image,
     });
-
     setToast(`${item.name} has been added to your cart.`);
     setTimeout(() => setToast(null), 1500);
   };
 
-  const removeItem = async (store: Store, item: MenuItem) => {
-    const key = `${store.id}-${item.id}`;
-    setCart((prev) => {
-      const existing = prev[key];
-      if (!existing) return prev;
-
-      const updated = { ...prev };
-      if (existing.quantity <= 1) {
-        delete updated[key];
-      } else {
-        updated[key] = { ...existing, quantity: existing.quantity - 1 };
-      }
-
-      saveCart({
-        storeId: store.id,
-        storeName: store.name,
-        storeArea: store.area,
-        items: updated,
-      });
-
-      return updated;
-    });
+  const removeItem = (store: Store, item: MenuItem) => {
+    removeFromCart(store.id, item.id);
   };
 
   const cartSummary = useMemo(() => {
+    if (!cartData) return { totalItems: 0, totalAmount: 0 };
     let totalItems = 0;
     let totalAmount = 0;
-    Object.values(cart).forEach((item) => {
+    Object.values(cartData.items).forEach((item) => {
       totalItems += item.quantity;
       totalAmount += item.quantity * item.price;
     });
     return { totalItems, totalAmount };
-  }, [cart]);
+  }, [cartData]);
 
   return (
     <View style={styles.container}>
@@ -431,8 +391,17 @@ const SearchResultsScreen = () => {
               LKR {cartSummary.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </Text>
           </View>
-          <TouchableOpacity style={styles.cartButton} activeOpacity={0.9}>
-            <Text style={styles.cartButtonText}>View cart -></Text>
+          <TouchableOpacity
+            style={styles.cartButton}
+            activeOpacity={0.9}
+            onPress={() =>
+              router.push({
+                pathname: "/(user)/cart",
+                params: { from: "search-results", q: searchTerm, origin },
+              })
+            }
+          >
+            <Text style={styles.cartButtonText}>{"View cart ->"}</Text>
           </TouchableOpacity>
         </View>
       )}
