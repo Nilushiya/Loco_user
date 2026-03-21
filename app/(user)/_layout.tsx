@@ -47,6 +47,27 @@ export default function UserLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="search"
+        options={{
+          href: null, // hide from tab bar but keep route available
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="search-results"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="store"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }
