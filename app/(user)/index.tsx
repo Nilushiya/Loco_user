@@ -1,30 +1,331 @@
-import { StyleSheet } from 'react-native';
-import { ThemedText, ThemedView } from '../../components/Themed';
+import { useRouter } from "expo-router";
+import React from "react";
+import {
+  FlatList,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
-export default function Dashboard() {
+const userName = "Nilushiya"; // Replace with dynamic user data
+
+// Dynamic Greeting Function
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Good Morning!";
+  if (hour >= 12 && hour < 17) return "Good Afternoon!";
+  if (hour >= 17 && hour < 21) return "Good Evening!";
+  return "Good Night!";
+};
+
+// Dummy Category Data
+const categories = [
+  {
+    id: "1",
+    name: "Burger",
+    image:
+      "https://images.unsplash.com/photo-1599785209707-46a9829f4fc4?fit=crop&w=80&h=80",
+  },
+  {
+    id: "2",
+    name: "Pizza",
+    image:
+      "https://images.unsplash.com/photo-1601924575720-031b7d08c091?fit=crop&w=80&h=80",
+  },
+  {
+    id: "3",
+    name: "Drinks",
+    image:
+      "https://images.unsplash.com/photo-1571091718767-37c1f047cbf0?fit=crop&w=80&h=80",
+  },
+  {
+    id: "4",
+    name: "Rice",
+    image:
+      "https://images.unsplash.com/photo-1628774150787-3808c144bb8e?fit=crop&w=80&h=80",
+  },
+  {
+    id: "5",
+    name: "Dessert",
+    image:
+      "https://images.unsplash.com/photo-1606755962775-3f05d59e1f28?fit=crop&w=80&h=80",
+  },
+  {
+    id: "6",
+    name: "Noodles",
+    image:
+      "https://images.unsplash.com/photo-1589307005795-5c2fa2f551b0?fit=crop&w=80&h=80",
+  },
+];
+
+// Dummy Offer Data
+const offers = [
+  {
+    id: "1",
+    title: "50% Off on Burgers",
+    description: "Enjoy delicious burgers at half price today only!",
+    image: "https://via.placeholder.com/150",
+  },
+  {
+    id: "2",
+    title: "Buy 1 Get 1 Pizza",
+    description: "Order any large pizza and get one free!",
+    image: "https://via.placeholder.com/150",
+  },
+  {
+    id: "3",
+    title: "Free Delivery",
+    description: "Free delivery on orders above Rs.1500.",
+    image: "https://via.placeholder.com/150",
+  },
+];
+
+const Dashboard = () => {
+  const router = useRouter();
+
+  // Navigate to category page
+  const handleCategoryPress = (categoryName: string) => {
+    router.push({
+      pathname: "/(user)/search-results",
+      params: { q: categoryName, from: "index" },
+    });
+  };
+
+  const handleSearchPress = () => {
+    router.push("/(user)/search");
+  };
+
   return (
-    <ThemedView style={styles.container}>
-      <ThemedText style={styles.title}>Dashboard</ThemedText>
-      
-      {/* This text uses global theme by default */}
-      <ThemedText>Welcome to your app!</ThemedText>
-      
-      {/* This text uses a custom color ONLY for this instance */}
-      <ThemedText lightColor="blue" darkColor="lightblue">
-        I am blue in light mode and lightblue in dark mode.
-      </ThemedText>
-    </ThemedView>
+    <View style={styles.container}>
+      {/* Fixed Header */}
+      <View style={styles.header}>
+        <Text style={styles.hiText}>Hi, {userName}, </Text>
+        <Text style={styles.greeting}>{getGreeting()}</Text>
+        <TouchableOpacity style={styles.button}>
+          <Text style={styles.text}>Active</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Scrollable Content */}
+      <ScrollView
+        style={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={styles.searchBar}
+          onPress={handleSearchPress}
+        >
+          <Ionicons name="search-outline" size={18} color="#777" />
+          <Text style={styles.searchPlaceholder}>Search for food or restaurants</Text>
+        </TouchableOpacity>
+
+        {/* Categories Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Food Categories</Text>
+          <FlatList
+            data={categories}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.categoryCard}
+                onPress={() => handleCategoryPress(item.name)}
+              >
+                <Image
+                  source={{ uri: item.image }}
+                  style={styles.categoryImage}
+                />
+                <Text style={styles.categoryText}>{item.name}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+
+        {/* Offers Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Special Offers</Text>
+          {offers.map((offer) => (
+            <View key={offer.id} style={styles.offerCard}>
+              <Image source={{ uri: offer.image }} style={styles.offerImage} />
+
+              <View style={styles.offerContent}>
+                <Text style={styles.offerTitle}>{offer.title}</Text>
+                <Text style={styles.offerDescription}>{offer.description}</Text>
+              </View>
+
+              <TouchableOpacity style={styles.offerButton}>
+                <Text style={styles.offerButtonText}>Check Now</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    </View>
   );
-}
+};
+
+export default Dashboard;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#FEEDE6",
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+
+  // Fixed header
+  header: {
+    padding: 10,
+    paddingLeft: 20,
+    // paddingBottom: 20,
+    elevation: 3,
+  },
+
+  hiText: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+
+  greeting: {
+    fontSize: 13,
+    marginTop: 5,
+    color: "#555",
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f7f7f7",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginHorizontal: 15,
+    marginTop: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#f0f0f0",
+  },
+  searchPlaceholder: {
+    marginLeft: 8,
+    color: "#888",
+    fontSize: 13,
+  },
+  button: {
+    position: "absolute",
+    right: 20,
+    top: 24,
+    backgroundColor: "#C7F6C7",
+    borderRadius: 50,
+    alignItems: "center",
+    width: 70,
+    height: 35,
+    textAlign: "center",
+    padding: 5,
+  },
+  text: {
+    color: "#0b0b0b", // white text
+    fontWeight: "600",
+    fontSize: 16,
+  },
+  scrollContainer: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: "#fff",
+    flex: 1,
+    marginTop: 10,
+  },
+
+  section: {
+    marginTop: 20,
+    paddingHorizontal: 15,
+  },
+
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+
+  categoryCard: {
+    backgroundColor: "#E0E0E0",
+    padding: 10,
+    borderRadius: 15,
+    alignItems: "center",
+    marginRight: 12,
+    width: 90,
+  },
+
+  categoryImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    marginBottom: 5,
+  },
+
+  categoryText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+
+  offerCard: {
+    flex: 1,
+    flexDirection: "column",
+    backgroundColor: "#faf9f9",
+    borderRadius: 15,
+    padding: 10,
+    marginBottom: 15,
+    elevation: 3,
+    position: "relative",
+  },
+
+  offerImage: {
+    width: "100%",
+    height: 150,
+    borderRadius: 10,
+  },
+
+  offerContent: {
+    // marginTop: 10,
+    paddingRight: 90, // leave space for button
+  },
+
+  offerTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    paddingLeft: 15,
+  },
+
+  offerDescription: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 5,
+    paddingLeft: 15,
+  },
+
+  offerButton: {
+    position: "absolute",
+    right: 10,
+    // bottom: 10,
+    backgroundColor: "#FF7A00",
+    paddingVertical: 6,
+    // paddingHorizontal: 12,
+    borderRadius: 10,
+    width: 80,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  offerButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
