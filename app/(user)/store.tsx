@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -44,6 +45,7 @@ const storeMenus = {
 
 const StoreScreen = () => {
   const router = useRouter();
+  const navigation = useNavigation<any>();
 
   const params = useLocalSearchParams<{
     id?: string;
@@ -164,8 +166,8 @@ const StoreScreen = () => {
         <View style={styles.topBar}>
           <TouchableOpacity
             onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
+              if (navigation?.canGoBack?.()) {
+                navigation.goBack();
                 return;
               }
 
