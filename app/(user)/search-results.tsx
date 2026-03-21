@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Image,
   ScrollView,
@@ -9,6 +9,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { saveCart, getCart, clearCart } from "../../utils/cartStorage";
+import type { CartItem } from "../../utils/cartStorage";
 
 type MenuItem = {
   id: string;
@@ -125,16 +127,33 @@ const SearchResultsScreen = () => {
   const origin = (params.from || "search").toString();
   const searchTerm = keyword.trim();
   const lower = searchTerm.toLowerCase();
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useState<Record<string, CartItem>>({});
   const [toast, setToast] = useState<string | null>(null);
-
+  
+  useEffect(() => {
+    const loadCart = async () => {
+      const stored = await getCart();
+      if (stored?.items) {
+        setCart(stored.items);
+      }
+    };
+    loadCart();
+  }, []);
+  
   const goBackSafe = () => {
+    console.log("Go back safe triggered. Origin:", origin);
     if (origin === "index") {
       router.replace("/(user)");
       return;
     }
 
+    if (origin === "search") {
+      router.replace("/(user)/search");
+      return;
+    }
+
     if (router.canGoBack()) {
+      console.log("Router can go back, going back.");
       router.back();
       return;
     }
@@ -155,42 +174,83 @@ const SearchResultsScreen = () => {
     });
   }, [searchTerm, lower]);
 
-  const getQty = (key: string) => cart[key] || 0;
+  const getQty = (key: string) => cart[key]?.quantity || 0;
 
-  const addItem = (key: string, label: string) => {
-    setCart((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
-    setToast(`${label} has been added to your cart.`);
+  // const addItem = (key: string, label: string) => {
+  //   setCart((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
+  //   setToast(`${label} has been added to your cart.`);
+  //   setTimeout(() => setToast(null), 1500);
+  // };
+  const addItem = async (store: Store, item: MenuItem) => {
+    const key = `${store.id}-${item.id}`;
+    const stored = await getCart();
+
+    if (stored && stored.storeId !== store.id) {
+      await clearCart();
+      setCart({});
+    }
+
+    setCart((prev) => {
+      const existing = prev[key];
+      const price = Number(item.price.replace(/[^0-9.]/g, ""));
+      const updated: Record<string, CartItem> = {
+        ...prev,
+        [key]: {
+          id: item.id,
+          name: item.name,
+          price: isNaN(price) ? 0 : price,
+          image: item.image,
+          quantity: existing ? existing.quantity + 1 : 1,
+        },
+      };
+
+      saveCart({
+        storeId: store.id,
+        storeName: store.name,
+        storeArea: store.area,
+        items: updated,
+      });
+
+      return updated;
+    });
+
+    setToast(`${item.name} has been added to your cart.`);
     setTimeout(() => setToast(null), 1500);
   };
 
-  const removeItem = (key: string) => {
+  const removeItem = async (store: Store, item: MenuItem) => {
+    const key = `${store.id}-${item.id}`;
     setCart((prev) => {
-      const next = { ...prev };
-      if (!next[key]) return next;
-      next[key] -= 1;
-      if (next[key] <= 0) delete next[key];
-      return next;
+      const existing = prev[key];
+      if (!existing) return prev;
+
+      const updated = { ...prev };
+      if (existing.quantity <= 1) {
+        delete updated[key];
+      } else {
+        updated[key] = { ...existing, quantity: existing.quantity - 1 };
+      }
+
+      saveCart({
+        storeId: store.id,
+        storeName: store.name,
+        storeArea: store.area,
+        items: updated,
+      });
+
+      return updated;
     });
   };
 
   const cartSummary = useMemo(() => {
-    const allItems = matches.flatMap((store) =>
-      store.items.map((item) => ({
-        key: `${store.id}-${item.id}`,
-        price: item.price,
-      }))
-    );
     let totalItems = 0;
     let totalAmount = 0;
-    Object.entries(cart).forEach(([key, qty]) => {
-      const found = allItems.find((i) => i.key === key);
-      if (!found) return;
-      const numeric = Number(found.price.replace(/[^0-9.]/g, ""));
-      totalItems += qty;
-      totalAmount += qty * (isNaN(numeric) ? 0 : numeric);
+    Object.values(cart).forEach((item) => {
+      totalItems += item.quantity;
+      totalAmount += item.quantity * item.price;
     });
     return { totalItems, totalAmount };
-  }, [cart, matches]);
+  }, [cart]);
 
   return (
     <View style={styles.container}>
@@ -246,7 +306,13 @@ const SearchResultsScreen = () => {
                 if (store.available === false) return;
                 router.push({
                   pathname: "/(user)/store",
-                  params: { id: store.id, name: store.name, area: store.area },
+                  params: {
+                    id: store.id,
+                    name: store.name,
+                    area: store.area,
+                    q: searchTerm,
+                    from: origin,
+                  },
                 });
               }}
             >
@@ -283,7 +349,11 @@ const SearchResultsScreen = () => {
               </View>
             )}
 
-            <View style={styles.menuColumn}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.menuRowWrap}
+            >
               {store.items.map((item) => {
                 const key = `${store.id}-${item.id}`;
                 const qty = getQty(key);
@@ -310,7 +380,7 @@ const SearchResultsScreen = () => {
                     {qty > 0 ? (
                       <View style={styles.stepper}>
                         <TouchableOpacity
-                          onPress={() => removeItem(key)}
+                          onPress={() => removeItem(store, item)}
                           style={styles.stepBtn}
                           disabled={disabled}
                         >
@@ -318,7 +388,7 @@ const SearchResultsScreen = () => {
                         </TouchableOpacity>
                         <Text style={styles.qtyText}>{qty}</Text>
                         <TouchableOpacity
-                          onPress={() => addItem(key, item.name)}
+                          onPress={() => addItem(store, item)}
                           style={styles.stepBtn}
                           disabled={disabled}
                         >
@@ -333,7 +403,7 @@ const SearchResultsScreen = () => {
                           disabled && styles.addButtonDisabled,
                         ]}
                         activeOpacity={0.8}
-                        onPress={() => addItem(key, item.name)}
+                        onPress={() => addItem(store, item)}
                       >
                         <Text style={styles.addText}>Add +</Text>
                       </TouchableOpacity>
@@ -341,7 +411,7 @@ const SearchResultsScreen = () => {
                   </View>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
         ))}
       </ScrollView>
@@ -362,7 +432,7 @@ const SearchResultsScreen = () => {
             </Text>
           </View>
           <TouchableOpacity style={styles.cartButton} activeOpacity={0.9}>
-            <Text style={styles.cartButtonText}>View cart →</Text>
+            <Text style={styles.cartButtonText}>View cart -></Text>
           </TouchableOpacity>
         </View>
       )}
@@ -485,17 +555,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  menuColumn: {
-    gap: 12,
+  menuRowWrap: {
+    flexDirection: "row",
     paddingVertical: 4,
+    paddingRight: 6,
   },
   menuCard: {
+    width: 260,   
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fafafa",
     borderRadius: 12,
     padding: 10,
-    marginBottom: 4,
+    marginRight: 12,   
     borderWidth: 1,
     borderColor: "#eee",
   },

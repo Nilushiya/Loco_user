@@ -218,7 +218,7 @@ const SearchScreen = () => {
           <Ionicons name="search-outline" size={18} color="#666" />
           <TextInput
             style={styles.input}
-            placeholder="Search for shops or food"
+            placeholder="Search for food"
             placeholderTextColor="#999"
             value={query}
             onChangeText={setQuery}
