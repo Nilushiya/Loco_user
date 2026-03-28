@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Alert,
   Image,
@@ -141,9 +142,14 @@ export default function TrainDetailsScreen() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
-    Alert.alert("Success", "Train details submitted successfully!");
+    try {
+      await AsyncStorage.setItem("deliveryStation", arrival);
+      Alert.alert("Success", "Train details submitted successfully!");
+    } catch (error) {
+      console.log("Error saving station", error);
+    }
   };
 
   return (
