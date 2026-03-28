@@ -3,6 +3,7 @@ import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 import {
   Alert,
   Image,
@@ -16,6 +17,7 @@ import {
 import { Colors } from "../../constants/theme";
 
 export default function TrainDetailsScreen() {
+  const router = useRouter();
   const [trainNumber, setTrainNumber] = useState("");
   const [departure, setDeparture] = useState("");
   const [arrival, setArrival] = useState("");
@@ -146,7 +148,12 @@ export default function TrainDetailsScreen() {
     if (!validateForm()) return;
     try {
       await AsyncStorage.setItem("deliveryStation", arrival);
-      Alert.alert("Success", "Train details submitted successfully!");
+      Alert.alert("Success", "Train details submitted successfully!", [
+        {
+          text: "OK",
+          onPress: () => router.replace("/(user)"),
+        },
+      ]);
     } catch (error) {
       console.log("Error saving station", error);
     }

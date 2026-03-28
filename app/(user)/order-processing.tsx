@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useCart } from "../../context/CartContext";
 
 const PRIMARY = "#FF7A00";
 const PEACH = "#FEEDE6";
@@ -27,6 +28,9 @@ export default function OrderProcessingScreen() {
   const router = useRouter();
   const [orderId, setOrderId] = useState("");
   const [orderDetails, setOrderDetails] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+  const { restoreCart } = useCart();
   const [currentStep, setCurrentStep] = useState(0);
 
   // Steps: 0: Accepted, 1: Ready, 2: Picked-up, 3: Arrived Station, 4: Delivered
@@ -38,11 +42,24 @@ export default function OrderProcessingScreen() {
 
     AsyncStorage.getItem("activeOrder")
       .then((val) => {
-        if (val) {
-          setOrderDetails(JSON.parse(val));
+        if (val && val !== "null") {
+          try {
+            setOrderDetails(JSON.parse(val));
+          } catch (e) {
+            console.log("Parse Error", e);
+            setErrorMsg("Could not parse order details.");
+          }
+        } else {
+          setErrorMsg("No active order found.");
         }
       })
-      .catch((e) => console.log(e));
+      .catch((e) => {
+        console.log("Storage Error", e);
+        setErrorMsg("Failed to access storage.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
 
     // Simulate progress
     const timer = setInterval(() => {
@@ -53,31 +70,56 @@ export default function OrderProcessingScreen() {
         }
         return prev + 1;
       });
-    }, 4000);
+    }, 8000);
 
     return () => clearInterval(timer);
   }, []);
 
   const handleCancel = () => {
-    console.log("Cancel Order");
-    Alert.alert("Cancel Order", "Are you sure you want to cancel this order?", [
+    if (currentStep >= 1) {
+      Alert.alert("Cannot Cancel", "Your order is already being prepared and cannot be canceled.");
+      return;
+    }
+
+    Alert.alert("Cancel Order", "Are you sure you want to cancel the order?", [
       { text: "No", style: "cancel" },
       {
-        text: "Yes, Cancel",
+        text: "Yes",
         style: "destructive",
         onPress: async () => {
+          if (orderDetails && orderDetails.originalCart) {
+            await restoreCart(orderDetails.originalCart);
+          }
           await AsyncStorage.removeItem("activeOrder");
-          router.replace("/(user)");
+          router.replace("/(user)/cart");
         },
       },
     ]);
   };
 
-  if (!orderDetails) {
+  if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.center}>
           <Text>Loading Order...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (errorMsg || !orderDetails) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.center}>
+          <Text style={{ fontSize: 16, color: "red", padding: 20, textAlign: "center" }}>
+            {errorMsg || "Order details are missing."}
+          </Text>
+          <TouchableOpacity
+            style={[styles.bottomCancelBtn, { marginTop: 20, width: "80%" }]}
+            onPress={() => router.replace("/(user)")}
+          >
+            <Text style={styles.bottomCancelText}>Go Home</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -89,16 +131,17 @@ export default function OrderProcessingScreen() {
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => {
-            if (router.canGoBack()) router.back();
-            else router.replace("/(user)");
+            router.replace("/(user)");
           }}
         >
           <Ionicons name="arrow-back" size={24} color="#111" />
         </TouchableOpacity>
         <Text style={styles.headerOrderId}>{orderId}</Text>
-        <TouchableOpacity onPress={handleCancel}>
-          <Text style={styles.headerCancelText}>Cancel</Text>
-        </TouchableOpacity>
+        {currentStep < 1 && (
+          <TouchableOpacity onPress={handleCancel}>
+            <Text style={styles.headerCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -196,11 +239,13 @@ export default function OrderProcessingScreen() {
         </View>
 
       </ScrollView>
-      {/* <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.bottomCancelBtn} onPress={handleCancel}>
-          <Text style={styles.bottomCancelText}>Cancel</Text>
-        </TouchableOpacity>
-      </View> */}
+      {currentStep < 1 && (
+        <View style={styles.bottomContainer}>
+          <TouchableOpacity style={styles.bottomCancelBtn} onPress={handleCancel}>
+            <Text style={styles.bottomCancelText}>Cancel Order</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }

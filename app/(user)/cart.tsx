@@ -111,6 +111,7 @@ export default function CartScreen() {
     
     // Save active order details
     const orderData = {
+       originalCart: cart,
        storeName: cart?.storeName,
        items: itemsArray,
        subtotal,

@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, useColorScheme, View } from 'react-native';
 import { Provider, useDispatch, useSelector } from 'react-redux';
@@ -43,19 +44,27 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === '(auth)';
     const inUserGroup = segments[0] === '(user)';
 
-    // Temporary hardcoded credentials for testing (shadows Redux state)
     const testToken = '123';
     const testRole = 'User';
 
-    if (!testToken) {
-      if (!inAuthGroup) {
-        router.replace('/(auth)/login' as any);
+    const checkInitialRoute = async () => {
+      if (!testToken) {
+        if (!inAuthGroup) {
+          router.replace('/(auth)/login' as any);
+        }
+      } else {
+        const inFormGroup = segments[0] === 'form';
+        if (testRole === 'User' && !inUserGroup && !inFormGroup) {
+          const station = await AsyncStorage.getItem('deliveryStation');
+          if (!station) {
+            router.replace('/form/train-details' as any);
+          } else {
+            router.replace('/(user)' as any);
+          }
+        }
       }
-    } else {
-      if (testRole === 'User' && !inUserGroup) {
-        router.replace('/(user)' as any);
-      }
-    }
+    };
+    checkInitialRoute();
   }, [token, role, isReady, segments]);
 
   // 3. Show a loading spinner while checking SecureStore
