@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -33,11 +34,14 @@ export default function CartScreen() {
     id?: string;
     name?: string;
     area?: string;
+    paymentMethod?: string;
   }>();
   const { cart, isLoading, addItem, removeItem, clearAll } = useCart();
+  const paymentMethod = params.paymentMethod || "COD";
 
   const goBack = () => {
     const from = params.from;
+    console.log("from : ", from)
     if (from === "search-results") {
       router.replace({
         pathname: "/(user)/search-results",
@@ -55,43 +59,60 @@ export default function CartScreen() {
         },
       });
     } else {
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(user)");
+      }
     }
   };
 
   const itemsArray = useMemo(
-    () => (cart ? Object.values(cart.items) : []),
-    [cart]
+    () => (cart && cart.items ? Object.values(cart.items) : []),
+    [cart],
   );
 
   const subtotal = useMemo(
     () => itemsArray.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    [itemsArray]
+    [itemsArray],
   );
 
   const total = useMemo(() => subtotal + DELIVERY_FEE, [subtotal]);
 
   const handleClearCart = () => {
-    Alert.alert("Clear Cart", "Are you sure you want to remove all items?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Clear", style: "destructive", onPress: clearAll },
-    ]);
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure you want to remove all items?")) {
+        clearAll();
+      }
+    } else {
+      Alert.alert("Clear Cart", "Are you sure you want to remove all items?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Clear", style: "destructive", onPress: clearAll },
+      ]);
+    }
   };
 
   const handlePlaceOrder = () => {
-    Alert.alert(
-      "Order Placed!",
-      "Your order has been placed successfully. You will be notified once it is confirmed.",
-      [
-        {
-          text: "OK",
-          onPress: async () => {
-            await clearAll();
-            router.replace("/(user)");
+    if (Platform.OS === "web") {
+      window.alert("Your order has been placed successfully. You will be notified once it is confirmed.");
+      clearAll().then(() => {
+        router.replace("/(user)");
+      });
+    } else {
+      Alert.alert(
+        "Order Placed!",
+        "Your order has been placed successfully. You will be notified once it is confirmed.",
+        [
+          {
+            text: "OK",
+            onPress: async () => {
+              await clearAll();
+              router.replace("/(user)");
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   if (!isLoading && (!cart || itemsArray.length === 0)) {
@@ -124,7 +145,18 @@ export default function CartScreen() {
         <TouchableOpacity onPress={goBack} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="#111" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Your Cart</Text>
+
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <TouchableOpacity onPress={handleClearCart} style={{ padding: 6, marginRight: 6 }}>
+            <Ionicons
+              name="trash-outline"
+              size={22}
+              color="#c0392b"
+            />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Your Cart</Text>
+        </View>
+
         <View style={{ width: 38 }} />
       </View>
 
@@ -138,8 +170,12 @@ export default function CartScreen() {
             <View style={styles.storeCard}>
               <Ionicons name="storefront-outline" size={20} color={PRIMARY} />
               <View style={{ marginLeft: 10 }}>
-                <Text style={styles.storeName}>{cart.storeName}</Text>
-                <Text style={styles.storeArea}>{cart.storeArea}</Text>
+                <Text style={styles.storeName}>
+                  {cart?.storeName || "Unknown Store"}
+                </Text>
+                <Text style={styles?.storeArea}>
+                  {cart?.storeArea || "Unknown Area"}
+                </Text>
               </View>
             </View>
           ) : null
@@ -154,7 +190,9 @@ export default function CartScreen() {
             <View style={styles.stepper}>
               <TouchableOpacity
                 style={styles.stepBtn}
-                onPress={() => removeItem(cart!.storeId, item.id)}
+                onPress={() =>
+                  cart?.storeId && removeItem(cart.storeId, item.id)
+                }
               >
                 <Ionicons
                   name={item.quantity === 1 ? "trash-outline" : "remove"}
@@ -165,14 +203,21 @@ export default function CartScreen() {
               <Text style={styles.qtyText}>{item.quantity}</Text>
               <TouchableOpacity
                 style={styles.stepBtn}
-                onPress={() =>
-                  addItem(cart!.storeId, cart!.storeName, cart!.storeArea, {
-                    id: item.id,
-                    name: item.name,
-                    price: item.price,
-                    image: item.image,
-                  })
-                }
+                onPress={() => {
+                  if (cart?.storeId) {
+                    addItem(
+                      cart.storeId,
+                      cart?.storeName || "",
+                      cart?.storeArea || "",
+                      {
+                        id: item.id,
+                        name: item.name,
+                        price: item.price,
+                        image: item.image,
+                      },
+                    );
+                  }
+                }}
               >
                 <Ionicons name="add" size={18} color="#111" />
               </TouchableOpacity>
@@ -189,7 +234,9 @@ export default function CartScreen() {
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Delivery Fee</Text>
-                <Text style={styles.summaryValue}>{formatLKR(DELIVERY_FEE)}</Text>
+                <Text style={styles.summaryValue}>
+                  {formatLKR(DELIVERY_FEE)}
+                </Text>
               </View>
               <View style={[styles.summaryRow, styles.totalRow]}>
                 <Text style={styles.totalLabel}>Total</Text>
@@ -197,14 +244,30 @@ export default function CartScreen() {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={styles.clearBtn}
-              onPress={handleClearCart}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="trash-outline" size={16} color="#c0392b" />
-              <Text style={styles.clearText}>Clear Cart</Text>
-            </TouchableOpacity>
+            <View style={styles.paymentMethodCard}>
+              <View style={styles.paymentMethodInfo}>
+                <Ionicons
+                  name={
+                    paymentMethod === "Card" ? "card-outline" : "cash-outline"
+                  }
+                  size={24}
+                  color={PRIMARY}
+                />
+                <Text style={styles.paymentMethodText}>
+                  {paymentMethod === "Card"
+                    ? "Online Payment (Card)"
+                    : "Cash on Delivery"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push({
+                  pathname: "/(user)/payment-options",
+                  params
+                })}
+              >
+                <Text style={styles.changeBtnText}>Change</Text>
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               style={styles.placeOrderBtn}
@@ -295,8 +358,17 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  summaryTitle: { fontSize: 16, fontWeight: "800", color: "#111", marginBottom: 14 },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111",
+    marginBottom: 14,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
   summaryLabel: { fontSize: 14, color: "#555" },
   summaryValue: { fontSize: 14, color: "#111", fontWeight: "600" },
   totalRow: {
@@ -308,18 +380,35 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontSize: 16, fontWeight: "800", color: "#111" },
   totalValue: { fontSize: 16, fontWeight: "800", color: PRIMARY },
-  clearBtn: {
+  paymentMethodCard: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#c0392b",
-    marginBottom: 12,
+    justifyContent: "space-between",
     backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 2,
   },
-  clearText: { marginLeft: 6, color: "#c0392b", fontWeight: "700", fontSize: 14 },
+  paymentMethodInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  paymentMethodText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111",
+    marginLeft: 12,
+  },
+  changeBtnText: {
+    color: PRIMARY,
+    fontWeight: "700",
+    fontSize: 14,
+  },
   placeOrderBtn: {
     backgroundColor: PRIMARY,
     paddingVertical: 16,
@@ -334,7 +423,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyTitle: { fontSize: 20, fontWeight: "800", color: "#111", marginTop: 20 },
-  emptySubtitle: { fontSize: 14, color: "#777", marginTop: 8, textAlign: "center" },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#777",
+    marginTop: 8,
+    textAlign: "center",
+  },
   goBackBtn: {
     marginTop: 24,
     backgroundColor: PEACH,

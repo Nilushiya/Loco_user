@@ -4,6 +4,7 @@ import { CartProvider } from '../../context/CartContext';
 
 export default function UserLayout() {
   return (
+    <CartProvider>
     <Tabs backBehavior="history" screenOptions={{ tabBarActiveTintColor: "#FF7A00", } }
      >
       <Tabs.Screen  
@@ -71,6 +72,27 @@ export default function UserLayout() {
       />
       <Tabs.Screen
         name="cart"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="payment-options"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="card-details"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="order-placement"
         options={{
           href: null,
           headerShown: false,

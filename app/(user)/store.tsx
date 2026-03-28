@@ -119,15 +119,14 @@ const StoreScreen = () => {
         <View style={styles.topBar}>
           <TouchableOpacity
             onPress={() => {
-              if (navigation?.canGoBack?.()) {
-                navigation.goBack();
-                return;
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace({
+                  pathname: "/(user)/search-results",
+                  params: { q, from },
+                });
               }
-
-              router.replace({
-                pathname: "/(user)/search-results",
-                params: { q, from },
-              });
             }}
             style={styles.iconBtn}
             activeOpacity={0.8}

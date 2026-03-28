@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Cart, CartItem, clearCart, getCart, saveCart } from "../utils/cartStorage";
 
 type CartContextValue = {
-  cart: Cart | null;
+  cart?: Cart | null;
   isLoading: boolean;
   addItem: (
     storeId: string,
