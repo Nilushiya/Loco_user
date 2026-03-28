@@ -1,5 +1,6 @@
-import { useRouter } from "expo-router";
-import React from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import React, { useState, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   FlatList,
   Image,
@@ -86,6 +87,15 @@ const offers = [
 
 const Dashboard = () => {
   const router = useRouter();
+  const [hasActiveOrder, setHasActiveOrder] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem("activeOrder").then((val) => {
+        setHasActiveOrder(!!val);
+      });
+    }, [])
+  );
 
   // Navigate to category page
   const handleCategoryPress = (categoryName: string) => {
@@ -109,6 +119,17 @@ const Dashboard = () => {
           <Text style={styles.text}>Active</Text>
         </TouchableOpacity>
       </View>
+
+      {hasActiveOrder && (
+        <TouchableOpacity 
+          style={styles.activeOrderBanner}
+          onPress={() => router.push("/(user)/order-processing")}
+        >
+          <Ionicons name="bicycle" size={24} color="#fff" />
+          <Text style={styles.activeOrderText}>View Order Status</Text>
+          <Ionicons name="chevron-forward" size={20} color="#fff" style={{marginLeft: 'auto'}} />
+        </TouchableOpacity>
+      )}
 
       {/* Scrollable Content */}
       <ScrollView
@@ -177,12 +198,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FEEDE6",
   },
-
-  // Fixed header
+  activeOrderBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FF7A00",
+    padding: 15,
+    marginHorizontal: 15,
+    borderRadius: 15,
+    marginTop: 10,
+  },
+  activeOrderText: {
+    color: "#fff",
+    fontWeight: "bold",
+    marginLeft: 10,
+  },
   header: {
-    padding: 10,
-    paddingLeft: 20,
-    // paddingBottom: 20,
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
     elevation: 3,
   },
 

@@ -12,6 +12,7 @@ type CartContextValue = {
   ) => void;
   removeItem: (storeId: string, itemId: string) => void;
   clearAll: () => Promise<void>;
+  restoreCart: (cart: Cart) => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -91,8 +92,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCart(null);
   }, []);
 
+  const restoreCart = useCallback(async (cartData: Cart) => {
+    setCart(cartData);
+    await saveCart(cartData);
+  }, []);
+
   return (
-    <CartContext.Provider value={{ cart, isLoading, addItem, removeItem, clearAll }}>
+    <CartContext.Provider value={{ cart, isLoading, addItem, removeItem, clearAll, restoreCart }}>
       {children}
     </CartContext.Provider>
   );

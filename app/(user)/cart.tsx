@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Alert,
   FlatList,
@@ -11,6 +12,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Modal,
 } from "react-native";
 import { useCart } from "../../context/CartContext";
 
@@ -38,6 +40,14 @@ export default function CartScreen() {
   }>();
   const { cart, isLoading, addItem, removeItem, clearAll } = useCart();
   const paymentMethod = params.paymentMethod || "COD";
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deliveryStation, setDeliveryStation] = useState("Your Station");
+
+  useEffect(() => {
+    AsyncStorage.getItem("deliveryStation").then(val => {
+      if (val) setDeliveryStation(val);
+    }).catch(e => console.log("Failed to load delivery station", e));
+  }, []);
 
   const goBack = () => {
     const from = params.from;
@@ -93,26 +103,25 @@ export default function CartScreen() {
   };
 
   const handlePlaceOrder = () => {
-    if (Platform.OS === "web") {
-      window.alert("Your order has been placed successfully. You will be notified once it is confirmed.");
-      clearAll().then(() => {
-        router.replace("/(user)");
-      });
-    } else {
-      Alert.alert(
-        "Order Placed!",
-        "Your order has been placed successfully. You will be notified once it is confirmed.",
-        [
-          {
-            text: "OK",
-            onPress: async () => {
-              await clearAll();
-              router.replace("/(user)");
-            },
-          },
-        ]
-      );
-    }
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmOrder = async () => {
+    setShowConfirmModal(false);
+    
+    // Save active order details
+    const orderData = {
+       originalCart: cart,
+       storeName: cart?.storeName,
+       items: itemsArray,
+       subtotal,
+       deliveryFee: DELIVERY_FEE,
+       total,
+       station: deliveryStation
+    };
+    await AsyncStorage.setItem("activeOrder", JSON.stringify(orderData));
+    await clearAll();
+    router.replace("/(user)/order-processing");
   };
 
   if (!isLoading && (!cart || itemsArray.length === 0)) {
@@ -279,6 +288,42 @@ export default function CartScreen() {
           </View>
         }
       />
+
+      {/* Confirmation Modal */}
+      <Modal
+        visible={showConfirmModal}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="train-outline" size={50} color={PRIMARY} style={{ marginBottom: 10 }} />
+            <Text style={styles.modalTitle}>Confirm Your Order</Text>
+            <Text style={styles.modalMessage}>
+              Are you sure you want to place this order? The food will be delivered to:
+            </Text>
+            <View style={styles.stationBadge}>
+              <Ionicons name="location-outline" size={16} color="#444" />
+              <Text style={styles.stationName}>{deliveryStation}</Text>
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setShowConfirmModal(false)}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmBtn}
+                onPress={handleConfirmOrder}
+              >
+                <Text style={styles.confirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -437,4 +482,88 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   goBackText: { color: PRIMARY, fontWeight: "700", fontSize: 15 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 380,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111",
+    marginBottom: 8,
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: "#555",
+    textAlign: "center",
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  stationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: PEACH,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  stationName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: PRIMARY,
+    marginLeft: 6,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: "#f5f5f5",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  cancelText: {
+    color: "#555",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  confirmBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  confirmText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
+  },
 });
