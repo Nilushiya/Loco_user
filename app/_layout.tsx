@@ -22,10 +22,21 @@ function RootLayoutNav() {
       try {
         const savedToken = await SecureStore.getItemAsync('userToken');
         const savedRole = await SecureStore.getItemAsync('userRole');
+        const savedUserInfo = await SecureStore.getItemAsync('userInfo');
+        const parsedUserInfo = savedUserInfo
+          ? JSON.parse(savedUserInfo)
+          : null;
 
         if (savedToken && savedRole) {
           // If found, hydrate Redux state
-          dispatch(authSuccess({ token: savedToken, role: savedRole }));
+          dispatch(
+            authSuccess({
+              token: savedToken,
+              role: savedRole,
+              userId: parsedUserInfo?.id ?? null,
+              userInfo: parsedUserInfo,
+            }),
+          );
         }
       } catch (e) {
         console.error("Failed to load token", e);
@@ -43,24 +54,28 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inUserGroup = segments[0] === '(user)';
-
-    const testToken = '123';
-    const testRole = 'User';
+    const inFormGroup = segments[0] === 'form';
+    const effectiveRole = role ?? 'User';
 
     const checkInitialRoute = async () => {
-      if (!testToken) {
+      if (!token) {
         if (!inAuthGroup) {
           router.replace('/(auth)/login' as any);
         }
-      } else {
-        const inFormGroup = segments[0] === 'form';
-        if (testRole === 'User' && !inUserGroup && !inFormGroup) {
-          const station = await AsyncStorage.getItem('deliveryStation');
-          if (!station) {
-            router.replace('/form/train-details' as any);
-          } else {
-            router.replace('/(user)' as any);
-          }
+        return;
+      }
+
+      if (inAuthGroup) {
+        router.replace('/(user)' as any);
+        return;
+      }
+
+      if (effectiveRole === 'User' && !inUserGroup && !inFormGroup) {
+        const station = await AsyncStorage.getItem('deliveryStation');
+        if (!station) {
+          router.replace('/form/train-details' as any);
+        } else {
+          router.replace('/(user)' as any);
         }
       }
     };

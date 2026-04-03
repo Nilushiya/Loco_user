@@ -1,7 +1,9 @@
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { AntDesign, FontAwesome, MaterialIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  Alert,
+  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -12,78 +14,70 @@ import {
 } from "react-native";
 import authService from "../../api/authService";
 import { Colors } from "../../constants/theme";
-import { useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
-import { AntDesign, FontAwesome, MaterialIcons } from "@expo/vector-icons";
+import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 
-type SignupScreenProps = {
-  navigation: NativeStackNavigationProp<any>;
-};
-
-const SignupScreen = ({ navigation }: SignupScreenProps) => {
+const SignupScreen = () => {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const dispatch = useAppDispatch();
+  const { isLoading, error: authError } = useAppSelector((state) => state.auth);
+
+  const [firstname, setfirstname] = useState("");
+  const [lastname, setlastname] = useState("");
   const [email, setEmail] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [errors, setErrors] = useState<{
-    username?: string;
+    firstname?: string;
+    lastname?: string;
     email?: string;
+    phoneNumber?: string;
     password?: string;
     confirmPassword?: string;
   }>({});
 
-  const handleUsernameChange = (text: string) => {
-    setUsername(text);
-    if (errors.username) {
-      setErrors((prev) => ({ ...prev, username: undefined }));
-    }
-  };
+  type RegisterField =
+    | "firstname"
+    | "lastname"
+    | "email"
+    | "phoneNumber"
+    | "password"
+    | "confirmPassword";
 
-  const handleEmailChange = (text: string) => {
-    setEmail(text);
-    if (errors.email) {
-      setErrors((prev) => ({ ...prev, email: undefined }));
-    }
-  };
+  const handleFieldChange = (field: RegisterField) => (text: string) => {
+    if (field === "firstname") setfirstname(text);
+    if (field === "lastname") setlastname(text);
+    if (field === "email") setEmail(text);
+    if (field === "phoneNumber") setPhoneNumber(text);
+    if (field === "password") setPassword(text);
+    if (field === "confirmPassword") setConfirmPassword(text);
 
-  const handlePasswordChange = (text: string) => {
-    setPassword(text);  
-    if (errors.password) {
-      setErrors((prev) => ({ ...prev, password: undefined }));
-    }
-  };
-
-  const handleConfirmPasswordChange = (text: string) => {
-    setConfirmPassword(text);
-    if (errors.confirmPassword) {
-      setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
   };
 
   const validate = () => {
-    let newErrors: {
-      username?: string;
-      email?: string;
-      password?: string;
-      confirmPassword?: string;
-    } = {};
+    const newErrors: typeof errors = {};
     let isValid = true;
 
-    // Username
-    if (!username) {
-      newErrors.username = "Username is required";
+    if (!firstname) {
+      newErrors.firstname = "First name is required";
       isValid = false;
-    } else if (username.length < 3) {
-      newErrors.username = "Minimum 3 characters required";
-      isValid = false;
-    } else if (!/^[a-zA-Z0-9]+$/.test(username)) {
-      newErrors.username = "Only letters and numbers allowed";
+    } else if (firstname.length < 2) {
+      newErrors.firstname = "Enter a valid first name";
       isValid = false;
     }
 
-    // Email
+    if (!lastname) {
+      newErrors.lastname = "Last name is required";
+      isValid = false;
+    } else if (lastname.length < 2) {
+      newErrors.lastname = "Enter a valid last name";
+      isValid = false;
+    }
+
     if (!email) {
       newErrors.email = "Email is required";
       isValid = false;
@@ -92,7 +86,14 @@ const SignupScreen = ({ navigation }: SignupScreenProps) => {
       isValid = false;
     }
 
-    // Password
+    if (!phoneNumber) {
+      newErrors.phoneNumber = "Phone number is required";
+      isValid = false;
+    } else if (!/^\+?[0-9]{7,15}$/.test(phoneNumber)) {
+      newErrors.phoneNumber = "Enter a valid phone number";
+      isValid = false;
+    }
+
     if (!password) {
       newErrors.password = "Password is required";
       isValid = false;
@@ -107,10 +108,9 @@ const SignupScreen = ({ navigation }: SignupScreenProps) => {
       isValid = false;
     }
 
-    // Confirm Password
     if (!confirmPassword) {
       newErrors.confirmPassword = "Confirm password is required";
-
+      isValid = false;
     } else if (password !== confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
       isValid = false;
@@ -123,106 +123,158 @@ const SignupScreen = ({ navigation }: SignupScreenProps) => {
   const handleRegister = async () => {
     if (!validate()) return;
 
+    const payload = {
+      firstname,
+      lastname,
+      email,
+      phoneNumber,
+      password,
+    };
+
     try {
-      authService.signup({ username, email, password });
-      Alert.alert("Success", "Account created!");
-      navigation.navigate("login");
-    } catch (error: any) {
-      Alert.alert(
-        "Register Failed",
-        error?.response?.data?.message || "Something went wrong",
-      );
+      await dispatch(authService.register(payload));
+      router.replace("/(user)");
+    } catch {
+      // error is surfaced through auth slice
     }
   };
 
-return (
+  return (
     <LinearGradient colors={["#FEEDE6", "#FFFFFF"]} style={styles.gradient}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-        >
-      <View style={styles.card}>
-        <Image
-          source={require("../../assets/logo.png")}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <TextInput
-          placeholder="Username"
-          placeholderTextColor="#999"
-          style={styles.input}
-          value={username}
-          onChangeText={handleUsernameChange}
-        />
-        {errors.username && (
-          <Text style={styles.error}>{errors.username}</Text>
-        )}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={styles.card}>
+          <Image
+            source={require("../../assets/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
 
-        <TextInput
-          placeholder="Email"
-          placeholderTextColor="#999"
-          style={styles.input}
-          value={email}
-          onChangeText={handleEmailChange}
-        />
-        {errors.email && <Text style={styles.error}>{errors.email}</Text>}
+          {authError && <Text style={styles.authError}>{authError}</Text>}
 
-        <TextInput
-          placeholder="Password"
-          placeholderTextColor="#999"
-          secureTextEntry
-          style={styles.input}
-          value={password}
-          onChangeText={handlePasswordChange}
-        />
-        {errors.password && (
-          <Text style={styles.error}>{errors.password}</Text>
-        )}
+          <TextInput
+            placeholder="First Name"
+            placeholderTextColor="#999"
+            style={styles.input}
+            value={firstname}
+            onChangeText={handleFieldChange("firstname")}
+            autoCapitalize="words"
+          />
+          {errors.firstname && (
+            <Text style={styles.error}>{errors.firstname}</Text>
+          )}
 
-        <TextInput
-          placeholder="Confirm Password"
-          placeholderTextColor="#999"
-          secureTextEntry
-          style={styles.input}
-          value={confirmPassword}
-          onChangeText={handleConfirmPasswordChange}
-        />
-        {errors.confirmPassword && (
-          <Text style={styles.error}>{errors.confirmPassword}</Text>
-        )}
+          <TextInput
+            placeholder="Last Name"
+            placeholderTextColor="#999"
+            style={styles.input}
+            value={lastname}
+            onChangeText={handleFieldChange("lastname")}
+            autoCapitalize="words"
+          />
+          {errors.lastname && (
+            <Text style={styles.error}>{errors.lastname}</Text>
+          )}
 
-        <TouchableOpacity onPress={() => router.push("/#")}>
-          <Text style={styles.forgotPassword}>Forgot Password?</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleRegister}>
-          <Text style={styles.buttonText}>Never Hungry Again!</Text>
-        </TouchableOpacity>
-        <View style={styles.linewithtext}>
-          <View style={styles.line} />
-          <Text style={styles.text}>or</Text>
-          <View style={styles.line} />
-        </View>
-        <Text style={styles.otherSignIn}>Sign in with</Text>
-        <View style={styles.otherSignInicon}>
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: "#3b5998" }]}
-          >
-            <FontAwesome name="facebook-f" size={18} color="white" />
+          <TextInput
+            placeholder="Email"
+            placeholderTextColor="#999"
+            style={styles.input}
+            value={email}
+            onChangeText={handleFieldChange("email")}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          {errors.email && <Text style={styles.error}>{errors.email}</Text>}
+
+          <TextInput
+            placeholder="Phone Number"
+            placeholderTextColor="#999"
+            style={styles.input}
+            value={phoneNumber}
+            onChangeText={handleFieldChange("phoneNumber")}
+            keyboardType="phone-pad"
+          />
+          {errors.phoneNumber && (
+            <Text style={styles.error}>{errors.phoneNumber}</Text>
+          )}
+
+          <TextInput
+            placeholder="Password"
+            placeholderTextColor="#999"
+            secureTextEntry
+            style={styles.input}
+            value={password}
+            onChangeText={handleFieldChange("password")}
+          />
+          {errors.password && (
+            <Text style={styles.error}>{errors.password}</Text>
+          )}
+
+          <TextInput
+            placeholder="Confirm Password"
+            placeholderTextColor="#999"
+            secureTextEntry
+            style={styles.input}
+            value={confirmPassword}
+            onChangeText={handleFieldChange("confirmPassword")}
+          />
+          {errors.confirmPassword && (
+            <Text style={styles.error}>{errors.confirmPassword}</Text>
+          )}
+
+          <TouchableOpacity onPress={() => router.push("/#")}>
+            <Text style={styles.forgotPassword}>Forgot Password?</Text>
           </TouchableOpacity>
-
-          {/* Email Login */}
           <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: "#ff8c00" }]}
+            style={[
+              styles.button,
+              isLoading ? styles.buttonDisabled : undefined,
+            ]}
+            onPress={handleRegister}
+            disabled={isLoading}
           >
-            <MaterialIcons name="email" size={18} color="white" />
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Create Account</Text>
+            )}
           </TouchableOpacity>
+          <View style={styles.linewithtext}>
+            <View style={styles.line} />
+            <Text style={styles.text}>or</Text>
+            <View style={styles.line} />
+          </View>
+          <Text style={styles.otherSignIn}>Sign in with</Text>
+          <View style={styles.otherSignInicon}>
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: "#3b5998" }]}
+            >
+              <FontAwesome name="facebook-f" size={18} color="white" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: "#ff8c00" }]}
+            >
+              <MaterialIcons name="email" size={18} color="white" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.SignupBtn}>
+            <TouchableOpacity
+              onPress={() => router.push("/login")}
+              style={styles.signupTouch}
+            >
+              <AntDesign
+                name="up"
+                size={15}
+                color="white"
+                style={styles.upArrow}
+              />
+              <Text style={[styles.signup, { color: "white" }]}>
+                Already have an account
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-      {/* <View style={styles.SignupBtn}>
-        <TouchableOpacity onPress={() => router.push("/login")}>
-          <AntDesign name="up" size={15} color="white" style={styles.upArrow}/>
-          <Text style={[styles.signup, {color:"white"}]}>Sign In</Text>
-        </TouchableOpacity>
-      </View> */}
       </ScrollView>
     </LinearGradient>
   );
@@ -231,17 +283,11 @@ return (
 export default SignupScreen;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.default.background,
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
   gradient: {
     flex: 1,
+    paddingVertical: 20,
   },
   card: {
-    // backgroundColor: Colors.default.secondary,
     padding: 25,
     borderRadius: 20,
   },
@@ -250,18 +296,11 @@ const styles = StyleSheet.create({
     height: 200,
     alignSelf: "center",
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    textAlign: "center",
-    color: Colors.default.primary,
-    marginBottom: 20,
-  },
-  error: {
+  authError: {
     color: "red",
-    fontSize: 12,
-    marginTop: 5,
-    marginLeft: 10,
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 5,
   },
   input: {
     backgroundColor: Colors.default.white,
@@ -272,12 +311,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.default.gray,
   },
-    forgotPassword: {
-    textAlign: "right",
-    textDecorationLine: "underline",
-    fontSize: 13,
-    fontWeight: "500",
-  },
   button: {
     backgroundColor: Colors.default.primary,
     height: 40,
@@ -286,24 +319,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 15,
   },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
   buttonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
   },
-  link: {
-    textAlign: "center",
-    marginTop: 15,
-    color: Colors.default.primary,
+  forgotPassword: {
+    textAlign: "right",
+    textDecorationLine: "underline",
+    fontSize: 13,
     fontWeight: "500",
   },
-    signup: {
-    textAlign: "center",
-    color: Colors.default.primary,
-    fontWeight: "500",
-    marginBottom: 7
+  error: {
+    color: "red",
+    fontSize: 12,
+    marginTop: -10,
+    marginLeft: 10,
   },
-    linewithtext: {
+  signup: {
+    flex: 1,
+    textAlign: "center",
+    justifyContent: "center",
+    alignItems: "center",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  linewithtext: {
     flexDirection: "row",
     alignItems: "center",
     marginLeft: 30,
@@ -342,21 +386,20 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   SignupBtn: {
-    flex:1,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  signupTouch: {
+    width: "100%",
+    flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
-    width: "100%",
-    position: "relative",
-    bottom: 0,
     backgroundColor: Colors.default.primary,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 30,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   upArrow: {
-    flex: 1,
-    textAlign: "center",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 5
-  }
+    marginTop: 5,
+  },
 });

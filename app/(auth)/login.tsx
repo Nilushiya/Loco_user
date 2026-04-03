@@ -1,10 +1,9 @@
 import { AntDesign, FontAwesome, MaterialIcons } from "@expo/vector-icons";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  Alert,
+  ActivityIndicator,
   Image,
   StyleSheet,
   Text,
@@ -14,33 +13,33 @@ import {
 } from "react-native";
 import authService from "../../api/authService";
 import { Colors } from "../../constants/theme";
+import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 
-type LoginScreenProps = NativeStackScreenProps<any, "Login">;
-
-const LoginScreen = ({ navigation }: LoginScreenProps) => {
+const LoginScreen = () => {
   const router = useRouter();
+  const dispatch = useAppDispatch();
+  const { isLoading, error: authError } = useAppSelector((state) => state.auth);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>(
-    {},
-  );
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   const handleEmailChange = (text: string) => {
-    setEmail(text); 
+    setEmail(text);
     if (errors.email) {
       setErrors((prev) => ({ ...prev, email: undefined }));
     }
   };
 
   const handlePasswordChange = (text: string) => {
-    setPassword(text); 
+    setPassword(text);
     if (errors.password) {
       setErrors((prev) => ({ ...prev, password: undefined }));
     }
   };
 
   const validate = () => {
-    let newErrors: { email?: string; password?: string } = {};
+    const newErrors: { email?: string; password?: string } = {};
     let isValid = true;
 
     if (!email) {
@@ -59,17 +58,15 @@ const LoginScreen = ({ navigation }: LoginScreenProps) => {
     setErrors(newErrors);
     return isValid;
   };
+
   const handleLogin = async () => {
     if (!validate()) return;
 
     try {
-      authService.login({ email, password });
-      Alert.alert("Success", "Login successful!");
-    } catch (error: any) {
-      Alert.alert(
-        "Login Failed",
-        error?.response?.data?.message || "Something went wrong",
-      );
+      await dispatch(authService.login({ email, password }));
+      router.replace("/(user)");
+    } catch {
+      // error message is managed by Redux state, so nothing more is required here
     }
   };
 
@@ -82,12 +79,16 @@ const LoginScreen = ({ navigation }: LoginScreenProps) => {
           resizeMode="contain"
         />
 
+        {authError && <Text style={styles.authError}>{authError}</Text>}
+
         <TextInput
           placeholder="Email"
           placeholderTextColor="#999"
           style={styles.input}
           value={email}
           onChangeText={handleEmailChange}
+          keyboardType="email-address"
+          autoCapitalize="none"
         />
         {errors.email && <Text style={styles.error}>{errors.email}</Text>}
 
@@ -104,9 +105,22 @@ const LoginScreen = ({ navigation }: LoginScreenProps) => {
         <TouchableOpacity onPress={() => router.push("/#")}>
           <Text style={styles.forgotPassword}>Forgot Password?</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Eat Now!</Text>
+
+        <TouchableOpacity
+          style={[
+            styles.button,
+            isLoading ? styles.buttonDisabled : undefined,
+          ]}
+          onPress={handleLogin}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Sign In</Text>
+          )}
         </TouchableOpacity>
+
         <View style={styles.linewithtext}>
           <View style={styles.line} />
           <Text style={styles.text}>or</Text>
@@ -129,12 +143,19 @@ const LoginScreen = ({ navigation }: LoginScreenProps) => {
         </View>
       </View>
       <View style={styles.SignupBtn}>
-        <TouchableOpacity onPress={() => router.push("/signup")} style={styles.signupTouch}>
-          <AntDesign name="up" size={15} color="white" style={styles.upArrow}/>
-          <Text style={[styles.signup, {color:"white"}]}>Sign Up</Text>
+        <TouchableOpacity
+          onPress={() => router.push("/signup")}
+          style={styles.signupTouch}
+        >
+          <AntDesign
+            name="up"
+            size={15}
+            color="white"
+            style={styles.upArrow}
+          />
+          <Text style={[styles.signup, { color: "white" }]}>Sign Up</Text>
         </TouchableOpacity>
       </View>
-
     </LinearGradient>
   );
 };
@@ -144,7 +165,7 @@ export default LoginScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "space-between", 
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     backgroundColor: Colors.default.background,
   },
@@ -153,7 +174,6 @@ const styles = StyleSheet.create({
   },
   card: {
     flex: 1,
-    // justifyContent: "space-between",
     padding: 25,
     borderRadius: 20,
   },
@@ -186,6 +206,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 15,
   },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
   buttonText: {
     color: "#fff",
     fontSize: 16,
@@ -203,12 +226,17 @@ const styles = StyleSheet.create({
     color: Colors.default.primary,
     fontWeight: "500",
   },
-
   error: {
     color: "red",
     fontSize: 12,
     marginTop: -10,
     marginLeft: 10,
+  },
+  authError: {
+    color: "red",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 5,
   },
   linewithtext: {
     flexDirection: "row",
@@ -256,8 +284,7 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: Colors.default.primary, 
-
+    backgroundColor: Colors.default.primary,
     borderRadius: 30,
     paddingTop: 10,
   },
@@ -266,7 +293,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 5
+    marginTop: 5,
   },
   signup: {
     flex: 1,
@@ -276,6 +303,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
-
-
 });
