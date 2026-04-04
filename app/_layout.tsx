@@ -7,6 +7,7 @@ import { ActivityIndicator, useColorScheme, View } from 'react-native';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { authSuccess } from '../redux/slices/authSlice';
 import { store } from '../redux/store';
+import { TRAIN_DETAILS_KEY, TRAIN_DETAILS_TTL_MS } from '../constants/train';
 
 function RootLayoutNav() {
   const { token, role } = useSelector((state: any) => state.auth);
@@ -22,10 +23,21 @@ function RootLayoutNav() {
       try {
         const savedToken = await SecureStore.getItemAsync('userToken');
         const savedRole = await SecureStore.getItemAsync('userRole');
+        const savedUserInfo = await SecureStore.getItemAsync('userInfo');
+        const parsedUserInfo = savedUserInfo
+          ? JSON.parse(savedUserInfo)
+          : null;
 
         if (savedToken && savedRole) {
           // If found, hydrate Redux state
-          dispatch(authSuccess({ token: savedToken, role: savedRole }));
+          dispatch(
+            authSuccess({
+              token: savedToken,
+              role: savedRole,
+              userId: parsedUserInfo?.id ?? null,
+              userInfo: parsedUserInfo,
+            }),
+          );
         }
       } catch (e) {
         console.error("Failed to load token", e);
@@ -43,27 +55,47 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inUserGroup = segments[0] === '(user)';
+    const inFormGroup = segments[0] === 'form';
+    const effectiveRole = role ?? 'User';
 
-    const testToken = '123';
-    const testRole = 'User';
+    const hasValidTrainDetails = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+        if (!raw) return false;
+
+        const parsed = JSON.parse(raw);
+        if (parsed?.savedAt && Date.now() - parsed.savedAt < TRAIN_DETAILS_TTL_MS) {
+          return true;
+        }
+      } catch (error) {
+        console.error("Failed to validate train details", error);
+      }
+
+      await AsyncStorage.multiRemove([TRAIN_DETAILS_KEY, 'deliveryStation']);
+      return false;
+    };
 
     const checkInitialRoute = async () => {
-      if (!testToken) {
+      if (!token) {
         if (!inAuthGroup) {
           router.replace('/(auth)/login' as any);
         }
-      } else {
-        const inFormGroup = segments[0] === 'form';
-        if (testRole === 'User' && !inUserGroup && !inFormGroup) {
-          const station = await AsyncStorage.getItem('deliveryStation');
-          if (!station) {
-            router.replace('/form/train-details' as any);
-          } else {
-            router.replace('/(user)' as any);
-          }
+        return;
+      }
+
+      if (inAuthGroup) {
+        router.replace('/(user)' as any);
+        return;
+      }
+
+      if (effectiveRole === 'User' && !inFormGroup) {
+        const hasDetails = await hasValidTrainDetails();
+        if (!hasDetails) {
+          router.replace('/form/train-details' as any);
         }
       }
     };
+
     checkInitialRoute();
   }, [token, role, isReady, segments]);
 

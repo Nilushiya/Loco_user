@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Image,
   ScrollView,
@@ -9,223 +9,139 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Location from "expo-location";
+import { useSearchItems } from "../../hooks/useSearchItems";
 import { useCart } from "../../context/CartContext";
-
-type MenuItem = {
-  id: string;
-  name: string;
-  price: string;
-  rating: string;
-  reviews: string;
-  image: string;
-  tags: string[];
-  available?: boolean;
-};
-
-type Store = {
-  id: string;
-  name: string;
-  area: string;
-  rating: string;
-  reviews: string;
-  eta: string;
-  fee: string;
-  logo: string;
-  available?: boolean;
-  items: MenuItem[];
-  highlight?: string;
-};
-
-const stores: Store[] = [
-  {
-    id: "s1",
-    name: "Wok To Walk",
-    area: "Kiribathgoda",
-    rating: "92.9%",
-    reviews: "500+",
-    eta: "45 - 55 min",
-    fee: "LKR 119.00",
-    logo: "https://images.unsplash.com/photo-1527181152855-fc03fc7949c8?auto=format&fit=crop&w=120&q=80",
-    available: true,
-    items: [
-      {
-        id: "m1",
-        name: "Chicken Kottu",
-        price: "LKR 990.00",
-        rating: "94%",
-        reviews: "500+",
-        image: "https://images.unsplash.com/photo-1622396481228-34b4c4b29f70?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "chicken"],
-        available: true,
-      },
-    ],
-  },
-  {
-    id: "s2",
-    name: "Mr. Kottu Grand Restaurant",
-    area: "Kiribathgoda",
-    rating: "79.8%",
-    reviews: "500+",
-    eta: "50 - 60 min",
-    fee: "LKR 139.00",
-    logo: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=120&q=80",
-    highlight: "Combo Deal",
-    available: true,
-    items: [
-      {
-        id: "m2",
-        name: "Roasted Chicken Kottu",
-        price: "LKR 1,500.00",
-        rating: "72%",
-        reviews: "100+",
-        image: "https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "chicken"],
-        available: true,
-      },
-      {
-        id: "m3",
-        name: "Cheese Kottu",
-        price: "LKR 1,250.00",
-        rating: "80%",
-        reviews: "200+",
-        image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "cheese"],
-        available: true,
-      },
-    ],
-  },
-  {
-    id: "s3",
-    name: "Devon Hotel & Bakery",
-    area: "Kiribathgoda",
-    rating: "92.8%",
-    reviews: "500+",
-    eta: "45 - 55 min",
-    fee: "LKR 99.00",
-    logo: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=120&q=80",
-    available: true,
-    items: [
-      {
-        id: "m4",
-        name: "Chicken Fried Rice",
-        price: "LKR 780.00",
-        rating: "96%",
-        reviews: "500+",
-        image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
-        tags: ["rice", "chicken"],
-        available: true,
-      },
-      {
-        id: "m2",
-        name: "Roasted Chicken Kottu",
-        price: "LKR 1,500.00",
-        rating: "72%",
-        reviews: "100+",
-        image: "https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "chicken"],
-        available: true,
-      },
-      {
-        id: "m3",
-        name: "Cheese Kottu",
-        price: "LKR 1,250.00",
-        rating: "80%",
-        reviews: "200+",
-        image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "cheese"],
-        available: true,
-      },
-    ],
-  },
-];
+import { SearchResultItem } from "../../types/search";
 
 const SearchResultsScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string; from?: string }>();
-  const keyword = (params.q || "").toString();
+  const keyword = (params.q || "").toString().trim();
   const origin = (params.from || "search").toString();
-  const searchTerm = keyword.trim();
-  const lower = searchTerm.toLowerCase();
-  const { cart: cartData, addItem: addToCart, removeItem: removeFromCart } = useCart();
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const { results, loading, error } = useSearchItems({
+    query: keyword,
+    latitude: coords?.latitude,
+    longitude: coords?.longitude,
+  });
+  const { cart: cartData, addItem: addToCart, removeItem } = useCart();
   const [toast, setToast] = useState<string | null>(null);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== Location.PermissionStatus.GRANTED) {
+          if (active) {
+            setLocationError(
+              "Enable location access to surface relevant restaurants."
+            );
+          }
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (!active) return;
+        setCoords({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+        setLocationError(null);
+      } catch (err) {
+        if (active) {
+          setLocationError(
+            "We could not resolve your GPS location. Try again in a moment."
+          );
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const groupedRestaurants = useMemo(() => {
+    const map = new Map<
+      number,
+      {
+        restaurantId: number;
+        restaurantName: string;
+        restaurantImage?: string;
+        items: SearchResultItem[];
+      }
+    >();
+    results.forEach((result) => {
+      const current = map.get(result.restaurantId);
+      if (current) {
+        current.items.push(result);
+      } else {
+        map.set(result.restaurantId, {
+          restaurantId: result.restaurantId,
+          restaurantName: result.restaurantName ?? "Restaurant",
+          restaurantImage: result.restaurantImage,
+          items: [result],
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [results]);
+
+  const getQty = (restaurantId: number, itemId: string) => {
+    const key = `${restaurantId}-${itemId}`;
+    return cartData?.items[key]?.quantity || 0;
+  };
+
+  const handleAdd = (
+    restaurantId: number,
+    restaurantName: string,
+    item: SearchResultItem
+  ) => {
+    const price = item.price ?? 0;
+    addToCart(String(restaurantId), restaurantName, item.categoryName ?? "Unknown", {
+      id: item.id,
+      name: item.name,
+      price,
+      image: item.image?? "https://images.unsplash.com/photo-1528715471579-d1b1f5ca77b0?auto=format&fit=crop&w=120&q=80",
+    });
+    setToast(`${item.name} has been added to your cart.`);
+    setTimeout(() => setToast(null), 1600);
+  };
+
+  const handleRemove = (restaurantId: number, itemId: string) => {
+    removeItem(String(restaurantId), itemId);
+  };
+
   const goBackSafe = () => {
-    console.log("Go back safe triggered. Origin:", origin);
     if (origin === "index") {
       router.replace("/(user)");
       return;
     }
-
     if (origin === "search") {
       router.replace("/(user)/search");
       return;
     }
-
     if (router.canGoBack()) {
-      console.log("Router can go back, going back.");
       router.back();
       return;
     }
-
     router.replace("/(user)/search");
   };
-
-  const matches = useMemo(() => {
-    if (!searchTerm) return [];
-    return stores.filter((store) => {
-      const inStore = store.name.toLowerCase().includes(lower);
-      const inMenu = store.items.some((item) => {
-        const inName = item.name.toLowerCase().includes(lower);
-        const inTags = item.tags.some((t) => t.toLowerCase().includes(lower));
-        return inName || inTags;
-      });
-      return inStore || inMenu;
-    });
-  }, [searchTerm, lower]);
-
-  const getQty = (key: string) => cartData?.items[key]?.quantity || 0;
-
-  const addItem = (store: Store, item: MenuItem) => {
-    const price = Number(item.price.replace(/[^0-9.]/g, ""));
-    addToCart(store.id, store.name, store.area, {
-      id: item.id,
-      name: item.name,
-      price: isNaN(price) ? 0 : price,
-      image: item.image,
-    });
-    setToast(`${item.name} has been added to your cart.`);
-    setTimeout(() => setToast(null), 1500);
-  };
-
-  const removeItem = (store: Store, item: MenuItem) => {
-    removeFromCart(store.id, item.id);
-  };
-
-  const cartSummary = useMemo(() => {
-    if (!cartData) return { totalItems: 0, totalAmount: 0 };
-    let totalItems = 0;
-    let totalAmount = 0;
-    Object.values(cartData.items).forEach((item) => {
-      totalItems += item.quantity;
-      totalAmount += item.quantity * item.price;
-    });
-    return { totalItems, totalAmount };
-  }, [cartData]);
 
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
-        <TouchableOpacity
-          onPress={goBackSafe}
-          style={styles.backButton}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity onPress={goBackSafe} style={styles.backButton}>
           <Ionicons name="arrow-back" size={22} color="#111" />
         </TouchableOpacity>
         <View style={styles.searchPill}>
           <Ionicons name="search-outline" size={18} color="#444" />
-          <Text style={styles.searchText}>{searchTerm || "Search"}</Text>
-          {searchTerm.length > 0 && (
+          <Text style={styles.searchText}>{keyword || "Search"}</Text>
+          {keyword && (
             <TouchableOpacity
               onPress={() => router.replace("/(user)/search")}
               style={styles.clearButton}
@@ -242,105 +158,75 @@ const SearchResultsScreen = () => {
         contentContainerStyle={styles.content}
       >
         <Text style={styles.resultLabel}>
-          Showing results for <Text style={styles.bold}>'{searchTerm}'</Text>
+          Showing results for <Text style={styles.bold}>'{keyword}'</Text>
         </Text>
-
-        {matches.length === 0 && (
+        {!coords && !locationError && (
+          <Text style={styles.helperText}>Acquiring your location…</Text>
+        )}
+        {locationError && (
+          <Text style={styles.errorText}>{locationError}</Text>
+        )}
+        {error && <Text style={styles.errorText}>{error}</Text>}
+        {loading && (
+          <Text style={styles.helperText}>Searching restaurants…</Text>
+        )}
+        {!loading && !groupedRestaurants.length && !error && (
           <Text style={styles.empty}>No matching shops for this search.</Text>
         )}
 
-        {matches.map((store) => (
-          <View key={store.id} style={styles.card}>
-            {!store.available && (
-              <View style={styles.unavailableBadge}>
-                <Ionicons name="ban" size={14} color="#c0392b" />
-                <Text style={styles.unavailableText}>Currently Unavailable</Text>
-              </View>
-            )}
-
+        {groupedRestaurants.map((restaurant) => (
+          <View key={restaurant.restaurantId} style={styles.card}>
             <TouchableOpacity
-              style={[styles.cardHeader, !store.available && { opacity: 0.5 }]}
-              activeOpacity={store.available === false ? 1 : 0.8}
-              disabled={store.available === false}
-              onPress={() => {
-                if (store.available === false) return;
+              style={styles.cardHeader}
+              onPress={() =>
                 router.push({
-                  pathname: "/(user)/store",
+                  pathname: "/(user)/restaurant-items",
                   params: {
-                    id: store.id,
-                    name: store.name,
-                    area: store.area,
-                    q: searchTerm,
-                    from: origin,
+                    restaurantId: restaurant.restaurantId,
+                    restaurantName: restaurant.restaurantName,
                   },
-                });
-              }}
+                })
+              }
             >
-              <Image source={{ uri: store.logo }} style={styles.logo} />
+              <Image
+                source={{
+                  uri:
+                    restaurant.restaurantImage ??
+                    "https://images.unsplash.com/photo-1528715471579-d1b1f5ca77b0?auto=format&fit=crop&w=120&q=80",
+                }}
+                style={styles.logo}
+              />
               <View style={{ flex: 1 }}>
-                <Text style={styles.storeName}>
-                  {store.name} ({store.area})
+                <Text style={styles.storeName}>{restaurant.restaurantName}</Text>
+                <Text style={styles.metaText}>
+                  {restaurant.items.length} item{restaurant.items.length > 1 ? "s" : ""}
                 </Text>
-                <View style={styles.metaRow}>
-                  <Ionicons name="thumbs-up" size={14} color="#444" />
-                  <Text style={styles.metaText}>
-                    {" "}
-                    {store.rating} ({store.reviews})
-                  </Text>
-                  <Ionicons
-                    name="time-outline"
-                    size={14}
-                    color="#444"
-                    style={{ marginLeft: 10 }}
-                  />
-                  <Text style={styles.metaText}> {store.eta}</Text>
-                  <Text style={[styles.metaText, { marginLeft: 10 }]}>
-                    Fee: {store.fee}
-                  </Text>
-                </View>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#999" />
             </TouchableOpacity>
-
-            {store.highlight && (
-              <View style={styles.dealBadge}>
-                <Ionicons name="pricetag" size={14} color="#0c7a43" />
-                <Text style={styles.dealText}>{store.highlight}</Text>
-              </View>
-            )}
-
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.menuRowWrap}
             >
-              {store.items.map((item) => {
-                const key = `${store.id}-${item.id}`;
-                const qty = getQty(key);
-                const disabled = item.available === false || store.available === false;
+              {restaurant.items.map((item) => {
+                const qty = getQty(restaurant.restaurantId, item.id);
+                const disabled = !!error;
                 return (
                   <View key={item.id} style={styles.menuCard}>
-                    <Image source={{ uri: item.image }} style={styles.itemImage} />
+                    {item.image && (
+                      <Image source={{ uri: item.image }} style={styles.itemImage} />
+                    )}
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemName} numberOfLines={2}>
                         {item.name}
                       </Text>
-                      <Text style={styles.metaText}>{item.price}</Text>
-                      <View style={[styles.metaRow, { marginTop: 4 }]}>
-                        <Ionicons name="thumbs-up" size={14} color="#444" />
-                        <Text style={styles.metaText}>
-                          {" "}
-                          {item.rating} ({item.reviews})
-                        </Text>
-                      </View>
-                      {!item.available && (
-                        <Text style={styles.unavailableText}>Temporarily unavailable</Text>
-                      )}
+                      <Text style={styles.metaText}>{item.description}</Text>
                     </View>
                     {qty > 0 ? (
                       <View style={styles.stepper}>
                         <TouchableOpacity
-                          onPress={() => removeItem(store, item)}
+                          onPress={() => handleRemove(restaurant.restaurantId, item.id)}
                           style={styles.stepBtn}
                           disabled={disabled}
                         >
@@ -348,7 +234,13 @@ const SearchResultsScreen = () => {
                         </TouchableOpacity>
                         <Text style={styles.qtyText}>{qty}</Text>
                         <TouchableOpacity
-                          onPress={() => addItem(store, item)}
+                          onPress={() =>
+                            handleAdd(
+                              restaurant.restaurantId,
+                              restaurant.restaurantName,
+                              item
+                            )
+                          }
                           style={styles.stepBtn}
                           disabled={disabled}
                         >
@@ -358,14 +250,20 @@ const SearchResultsScreen = () => {
                     ) : (
                       <TouchableOpacity
                         disabled={disabled}
-                        style={[
-                          styles.addButton,
-                          disabled && styles.addButtonDisabled,
-                        ]}
+                        style={[styles.addButton, disabled && styles.addButtonDisabled]}
                         activeOpacity={0.8}
-                        onPress={() => addItem(store, item)}
+                        onPress={() =>
+                          handleAdd(
+                            restaurant.restaurantId,
+                            restaurant.restaurantName,
+                            item
+                          )
+                        }
                       >
                         <Text style={styles.addText}>Add +</Text>
+                        <Text style={styles.priceText}>
+                          {item.meta ?? "Price"}
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -380,29 +278,6 @@ const SearchResultsScreen = () => {
         <View style={styles.toast}>
           <Ionicons name="checkmark-circle" size={18} color="#fff" />
           <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      )}
-
-      {cartSummary.totalItems > 0 && (
-        <View style={styles.cartBar}>
-          <View>
-            <Text style={styles.cartItems}>{cartSummary.totalItems} Items</Text>
-            <Text style={styles.cartTotal}>
-              LKR {cartSummary.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.cartButton}
-            activeOpacity={0.9}
-            onPress={() =>
-              router.push({
-                pathname: "/(user)/cart",
-                params: { from: "search-results", q: searchTerm, origin },
-              })
-            }
-          >
-            <Text style={styles.cartButtonText}>{"View cart ->"}</Text>
-          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -458,12 +333,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#444",
   },
-  bold: {
-    fontWeight: "700",
+  helperText: {
+    fontSize: 13,
+    color: "#555",
+    marginBottom: 6,
+  },
+  errorText: {
+    fontSize: 13,
+    color: "#c62828",
+    marginBottom: 6,
   },
   empty: {
     color: "#777",
     fontSize: 14,
+    marginBottom: 12,
   },
   card: {
     backgroundColor: "#fff",
@@ -492,37 +375,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111",
   },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 4,
-    flexWrap: "wrap",
-  },
   metaText: {
     color: "#555",
     fontSize: 12,
-  },
-  dealBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#0c7a43",
-    backgroundColor: "#e7f6ed",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-  dealText: {
-    marginLeft: 6,
-    color: "#0c7a43",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  menuRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
   },
   menuRowWrap: {
     flexDirection: "row",
@@ -530,20 +385,15 @@ const styles = StyleSheet.create({
     paddingRight: 6,
   },
   menuCard: {
-    width: 260,   
+    width: 260,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fafafa",
     borderRadius: 12,
     padding: 10,
-    marginRight: 12,   
+    marginRight: 12,
     borderWidth: 1,
     borderColor: "#eee",
-  },
-  itemName: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#111",
   },
   itemImage: {
     width: 74,
@@ -551,11 +401,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginRight: 10,
   },
+  itemName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111",
+  },
   addButton: {
     backgroundColor: "#FFE5D1",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    alignItems: "center",
   },
   addButtonDisabled: {
     backgroundColor: "#f1f1f1",
@@ -565,23 +421,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12,
   },
-  unavailableBadge: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    zIndex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fbeaea",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  unavailableText: {
-    color: "#c0392b",
-    marginLeft: 4,
+  priceText: {
     fontSize: 12,
-    fontWeight: "700",
+    color: "#444",
+    marginTop: 2,
   },
   stepper: {
     flexDirection: "row",
@@ -623,37 +466,5 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     flex: 1,
-  },
-  cartBar: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    bottom: 12,
-    backgroundColor: "#3b3735",
-    borderRadius: 16,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    elevation: 6,
-  },
-  cartItems: {
-    color: "#fff",
-    fontSize: 12,
-  },
-  cartTotal: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  cartButton: {
-    backgroundColor: "#f5c049",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  cartButtonText: {
-    fontWeight: "700",
-    color: "#111",
   },
 });
