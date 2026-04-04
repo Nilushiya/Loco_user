@@ -11,6 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import apiClient from "../../api/client";
+import { ENDPOINTS } from "../../constants/Config";
+import { LATEST_ORDER_ID_KEY, USER_ID_KEY } from "../../constants/train";
 import { useCart } from "../../context/CartContext";
 
 const PRIMARY = "#FF7A00";
@@ -24,44 +27,84 @@ const formatLKR = (amount: number): string =>
     maximumFractionDigits: 2,
   })}`;
 
+const formatDate = (value?: string | null) => {
+  if (!value) return "Pending";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+};
+
 export default function OrderProcessingScreen() {
   const router = useRouter();
   const [orderId, setOrderId] = useState("");
   const [orderDetails, setOrderDetails] = useState<any>(null);
+  const [apiOrder, setApiOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const { restoreCart } = useCart();
   const [currentStep, setCurrentStep] = useState(0);
-
-  // Steps: 0: Accepted, 1: Ready, 2: Picked-up, 3: Arrived Station, 4: Delivered
   const steps = ["Accepted", "Ready", "Picked-up", "Arrived Station", "Delivered"];
+  const displayedOrder = apiOrder ?? orderDetails;
 
   useEffect(() => {
-    // Generate a random 9 digit order ID
-    setOrderId(Math.floor(100000000 + Math.random() * 900000000).toString());
+    let isActive = true;
+    const loadOrder = async () => {
+      try {
+        const [activeOrderStr, storedOrderId, storedUserId] = await Promise.all([
+          AsyncStorage.getItem("activeOrder"),
+          AsyncStorage.getItem(LATEST_ORDER_ID_KEY),
+          AsyncStorage.getItem(USER_ID_KEY),
+        ]);
 
-    AsyncStorage.getItem("activeOrder")
-      .then((val) => {
-        if (val && val !== "null") {
+        if (activeOrderStr && activeOrderStr !== "null") {
           try {
-            setOrderDetails(JSON.parse(val));
-          } catch (e) {
-            console.log("Parse Error", e);
-            setErrorMsg("Could not parse order details.");
+            const parsed = JSON.parse(activeOrderStr);
+            if (isActive) {
+              setOrderDetails(parsed);
+              if (parsed?.orderId) {
+                setOrderId(String(parsed.orderId));
+              }
+            }
+          } catch (parseError) {
+            console.log("Parse Error", parseError);
+            if (isActive) setErrorMsg("Could not parse order details.");
           }
-        } else {
+        } else if (isActive) {
           setErrorMsg("No active order found.");
         }
-      })
-      .catch((e) => {
-        console.log("Storage Error", e);
-        setErrorMsg("Failed to access storage.");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
 
-    // Simulate progress
+        if (isActive && storedOrderId) {
+          setOrderId(storedOrderId);
+        }
+
+        if (storedOrderId && storedUserId) {
+          try {
+            const response = await apiClient.get(
+              `${ENDPOINTS.ORDER_FETCH}/${storedUserId}/${storedOrderId}`,
+            );
+            const fetched = response.data?.data ?? response.data ?? null;
+            if (isActive && fetched) {
+              setApiOrder(fetched);
+              if (fetched?.id) setOrderId(String(fetched.id));
+              setErrorMsg("");
+            }
+          } catch (fetchError) {
+            console.warn("Order fetch failed", fetchError);
+            if (isActive && !orderDetails) {
+              setErrorMsg("Unable to load order details.");
+            }
+          }
+        }
+      } catch (storageError) {
+        console.log("Storage Error", storageError);
+        if (isActive) setErrorMsg("Failed to access storage.");
+      } finally {
+        if (isActive) setLoading(false);
+      }
+    };
+
+    loadOrder();
+
     const timer = setInterval(() => {
       setCurrentStep((prev) => {
         if (prev >= steps.length) {
@@ -72,8 +115,11 @@ export default function OrderProcessingScreen() {
       });
     }, 8000);
 
-    return () => clearInterval(timer);
-  }, []);
+    return () => {
+      clearInterval(timer);
+      isActive = false;
+    };
+  }, [orderDetails]);
 
   const handleCancel = () => {
     if (currentStep >= 1) {
@@ -107,7 +153,7 @@ export default function OrderProcessingScreen() {
     );
   }
 
-  if (errorMsg || !orderDetails) {
+  if (errorMsg || !displayedOrder) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.center}>
@@ -125,6 +171,14 @@ export default function OrderProcessingScreen() {
     );
   }
 
+  const timelineEvents = [
+    { label: "Ordered", timestamp: displayedOrder.orderedAt },
+    { label: "Accepted", timestamp: displayedOrder.acceptedAt },
+    { label: "Ready", timestamp: displayedOrder.readyAt ?? displayedOrder.pickedupAt },
+    { label: "Out for delivery", timestamp: displayedOrder.outForDeliveryAt },
+    { label: "Delivered", timestamp: displayedOrder.deliveredAt },
+  ];
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -136,7 +190,7 @@ export default function OrderProcessingScreen() {
         >
           <Ionicons name="arrow-back" size={24} color="#111" />
         </TouchableOpacity>
-        <Text style={styles.headerOrderId}>{orderId}</Text>
+        <Text style={styles.headerOrderId}>{orderId || "Order"}</Text>
         {currentStep < 1 && (
           <TouchableOpacity onPress={handleCancel}>
             <Text style={styles.headerCancelText}>Cancel</Text>
@@ -145,7 +199,6 @@ export default function OrderProcessingScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Progress Timeline */}
         <View style={styles.timelineContainer}>
           {steps.map((step, index) => {
             const isCompleted = currentStep >= index;
@@ -182,63 +235,99 @@ export default function OrderProcessingScreen() {
           <Ionicons name="fast-food-outline" size={80} color={PEACH} style={{ opacity: 0.8 }} />
         </View>
 
-        {/* Order Details */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Order Details</Text>
-
           <View style={styles.deliveryRow}>
             <View style={styles.locationIconWrapper}>
               <Ionicons name="location-sharp" size={24} color={PRIMARY} />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.deliveringToLabel}>Delivering to:</Text>
-              <Text style={styles.deliveringToText}>{orderDetails.station}</Text>
+              <Text style={styles.deliveringToText}>
+                {displayedOrder.station?.name ??
+                  displayedOrder.station ??
+                  displayedOrder.stationName ??
+                  "Station"}
+              </Text>
             </View>
           </View>
 
           <View style={styles.divider} />
 
           <View style={styles.storeRow}>
-            <Text style={styles.storeName}>{orderDetails.storeName || "Restaurant"}</Text>
+            <Text style={styles.storeName}>
+              {displayedOrder.restaurant?.name ?? displayedOrder.storeName ?? "Restaurant"}
+            </Text>
             <TouchableOpacity style={styles.callBtn}>
               <Ionicons name="call-outline" size={20} color="#555" />
             </TouchableOpacity>
           </View>
 
-          {orderDetails.items &&
-            orderDetails.items.map((item: any, idx: number) => (
-              <View key={idx} style={styles.itemRow}>
-                <Text style={styles.itemName} numberOfLines={2}>
-                  {item.name}
-                </Text>
-                <View style={styles.itemQtyBadge}>
-                  <Text style={styles.itemQtyText}>{item.quantity}</Text>
+          {displayedOrder.items &&
+            displayedOrder.items.map((item: any, idx: number) => {
+              const itemName = item.item?.name ?? item.name ?? "Menu Item";
+              const quantity = item.quantity ?? 1;
+              return (
+                <View key={`${itemName}-${idx}`} style={styles.itemRow}>
+                  <Text style={styles.itemName} numberOfLines={2}>
+                    {itemName}
+                  </Text>
+                  <View style={styles.itemQtyBadge}>
+                    <Text style={styles.itemQtyText}>{quantity}</Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
+
+          <View style={styles.divider} />
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Seat Number</Text>
+            <Text style={styles.detailValue}>{displayedOrder.seatNumber ?? "Not set"}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Train</Text>
+            <Text style={styles.detailValue}>
+              {displayedOrder.train?.name ?? displayedOrder.trainId ?? "Train"}
+            </Text>
+          </View>
 
           <View style={styles.divider} />
 
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Sub Total</Text>
-            <Text style={styles.priceValue}>{formatLKR(orderDetails.subtotal || 0)}</Text>
+            <Text style={styles.priceValue}>
+              {formatLKR(displayedOrder.subtotal ?? displayedOrder.amount ?? 0)}
+            </Text>
           </View>
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Delivery Fee</Text>
-            <Text style={styles.priceValue}>+ {formatLKR(orderDetails.deliveryFee || 0)}</Text>
+            <Text style={styles.priceValue}>
+              + {formatLKR(displayedOrder.deliveryFee ?? 0)}
+            </Text>
           </View>
           <View style={[styles.priceRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>{formatLKR(orderDetails.total || 0)}</Text>
+            <Text style={styles.totalValue}>{formatLKR(displayedOrder.total ?? 0)}</Text>
           </View>
+        </View>
+
+        <View style={styles.statusCard}>
+          <Text style={styles.sectionTitle}>Status Timeline</Text>
+          {timelineEvents.map((event) => (
+            <View key={event.label} style={styles.statusRow}>
+              <Text style={styles.statusLabel}>{event.label}</Text>
+              <Text style={styles.statusValue}>{formatDate(event.timestamp)}</Text>
+            </View>
+          ))}
         </View>
 
         <View style={styles.paymentCard}>
           <Ionicons name="cash-outline" size={24} color={GREEN} />
-          <Text style={styles.paymentText}>Cash</Text>
+          <Text style={styles.paymentText}>Cash on Delivery</Text>
         </View>
-
       </ScrollView>
+
       {currentStep < 1 && (
         <View style={styles.bottomContainer}>
           <TouchableOpacity style={styles.bottomCancelBtn} onPress={handleCancel}>
@@ -289,7 +378,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   stepCircleCompleted: {
-    backgroundColor: GREEN, // changing to green when finished as requested
+    backgroundColor: GREEN,
   },
   stepCirclePending: {
     backgroundColor: "#ccc",
@@ -446,6 +535,46 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#111",
   },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  detailLabel: {
+    color: "#666",
+    fontSize: 14,
+  },
+  detailValue: {
+    color: "#111",
+    fontWeight: "700",
+  },
+  statusCard: {
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 15,
+    elevation: 3,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#f5f5f5",
+  },
+  statusRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  statusLabel: {
+    color: "#444",
+    fontWeight: "600",
+  },
+  statusValue: {
+    color: "#888",
+    fontSize: 13,
+  },
   paymentCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -480,7 +609,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     borderRadius: 100,
     borderWidth: 1.5,
-    borderColor: "rgba(226, 19, 19, 0.4)", // light red border
+    borderColor: "rgba(226, 19, 19, 0.4)",
     alignItems: "center",
   },
   bottomCancelText: {

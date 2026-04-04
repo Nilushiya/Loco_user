@@ -53,6 +53,8 @@ export const TRACKING_API_URL = TRACKING_API_URL_VALUE;
 export const ENDPOINTS = {
   AUTH_LOGIN: "/user/login",
   AUTH_REGISTER: "/user/register",
+  ORDER_CREATE: "/order/create",
+  ORDER_FETCH: "/order/user/get",
 
   // future routes kept for reference
   // USER_PROFILE: '/user/profile',

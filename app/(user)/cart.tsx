@@ -1,20 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  Modal,
   Platform,
   SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  Modal,
 } from "react-native";
+import apiClient from "../../api/client";
+import { ENDPOINTS } from "../../constants/Config";
+import { LATEST_ORDER_ID_KEY, TRAIN_DETAILS_KEY } from "../../constants/train";
 import { useCart } from "../../context/CartContext";
+import { useAppSelector } from "../../redux/hooks";
 
 const DELIVERY_FEE = 50;
 const PRIMARY = "#FF7A00";
@@ -26,6 +32,13 @@ const formatLKR = (amount: number): string =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+
+type TrainDetails = {
+  trainNumber?: string;
+  seatNumber?: string;
+  departure?: string;
+  arrival?: string;
+};
 
 export default function CartScreen() {
   const router = useRouter();
@@ -39,19 +52,45 @@ export default function CartScreen() {
     paymentMethod?: string;
   }>();
   const { cart, isLoading, addItem, removeItem, clearAll } = useCart();
+  const { userId } = useAppSelector((state) => state.auth);
+  const [trainDetails, setTrainDetails] = useState<TrainDetails | null>(null);
+  const [seatNumberInput, setSeatNumberInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
   const paymentMethod = params.paymentMethod || "COD";
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [deliveryStation, setDeliveryStation] = useState("Your Station");
 
   useEffect(() => {
-    AsyncStorage.getItem("deliveryStation").then(val => {
-      if (val) setDeliveryStation(val);
-    }).catch(e => console.log("Failed to load delivery station", e));
+    AsyncStorage.getItem("deliveryStation")
+      .then((val) => {
+        if (val) setDeliveryStation(val);
+      })
+      .catch((e) => console.log("Failed to load delivery station", e));
+  }, []);
+
+  useEffect(() => {
+    const loadTrainDetails = async () => {
+      const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          setTrainDetails(parsed);
+          if (parsed?.seatNumber) {
+            setSeatNumberInput(parsed.seatNumber);
+          }
+        } catch (e) {
+          console.warn("Unable to parse train details", e);
+        }
+      }
+    };
+
+    loadTrainDetails();
   }, []);
 
   const goBack = () => {
     const from = params.from;
-    console.log("from : ", from)
+    console.log("from : ", from);
     if (from === "search-results") {
       router.replace({
         pathname: "/(user)/search-results",
@@ -103,25 +142,75 @@ export default function CartScreen() {
   };
 
   const handlePlaceOrder = () => {
+    setOrderError(null);
     setShowConfirmModal(true);
   };
 
   const handleConfirmOrder = async () => {
-    setShowConfirmModal(false);
-    
-    // Save active order details
-    const orderData = {
-       originalCart: cart,
-       storeName: cart?.storeName,
-       items: itemsArray,
-       subtotal,
-       deliveryFee: DELIVERY_FEE,
-       total,
-       station: deliveryStation
-    };
-    await AsyncStorage.setItem("activeOrder", JSON.stringify(orderData));
-    await clearAll();
-    router.replace("/(user)/order-processing");
+    if (!seatNumberInput.trim()) {
+      setOrderError("Please enter your seat number.");
+      return;
+    }
+
+    if (!cart || itemsArray.length === 0) {
+      setOrderError("Cart is empty.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setOrderError(null);
+
+    try {
+      const orderedItems = itemsArray.map((item) => ({
+        id: Number(item.id) || item.id,
+        quantity: item.quantity,
+      }));
+
+      const payload = {
+        seatNumber: seatNumberInput.trim(),
+        userId: userId ?? 0,
+        trainId: Number(trainDetails?.trainId ?? 0),
+        stationId: Number(trainDetails?.arrivalStationId ?? 0),
+        restaurantId: Number(cart.storeId) ?? 0,
+        orderedItems,
+      };
+
+      const response = await apiClient.post(ENDPOINTS.ORDER_CREATE, payload);
+      console.log("Order creation response:", response.data);
+      const createdOrder = response.data?.data ?? response.data ?? null;
+      const orderId = createdOrder?.id;
+
+      if (trainDetails) {
+        const updated = { ...trainDetails, seatNumber: seatNumberInput.trim() };
+        await AsyncStorage.setItem(TRAIN_DETAILS_KEY, JSON.stringify(updated));
+      }
+
+      if (orderId) {
+        await AsyncStorage.setItem(LATEST_ORDER_ID_KEY, orderId.toString());
+      }
+
+      const orderData = {
+        originalCart: cart,
+        storeName: cart?.storeName,
+        items: itemsArray,
+        subtotal,
+        deliveryFee: DELIVERY_FEE,
+        total,
+        station: deliveryStation,
+        seatNumber: seatNumberInput.trim(),
+        orderId,
+      };
+      await AsyncStorage.setItem("activeOrder", JSON.stringify(orderData));
+      await clearAll();
+      setShowConfirmModal(false);
+      router.replace("/(user)/order-processing");
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ?? "Unable to place your order.";
+      setOrderError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!isLoading && (!cart || itemsArray.length === 0)) {
@@ -156,12 +245,11 @@ export default function CartScreen() {
         </TouchableOpacity>
 
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <TouchableOpacity onPress={handleClearCart} style={{ padding: 6, marginRight: 6 }}>
-            <Ionicons
-              name="trash-outline"
-              size={22}
-              color="#c0392b"
-            />
+          <TouchableOpacity
+            onPress={handleClearCart}
+            style={{ padding: 6, marginRight: 6 }}
+          >
+            <Ionicons name="trash-outline" size={22} color="#c0392b" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Your Cart</Text>
         </View>
@@ -269,10 +357,12 @@ export default function CartScreen() {
                 </Text>
               </View>
               <TouchableOpacity
-                onPress={() => router.push({
-                  pathname: "/(user)/payment-options",
-                  params
-                })}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(user)/payment-options",
+                    params,
+                  })
+                }
               >
                 <Text style={styles.changeBtnText}>Change</Text>
               </TouchableOpacity>
@@ -292,38 +382,78 @@ export default function CartScreen() {
       {/* Confirmation Modal */}
       <Modal
         visible={showConfirmModal}
-        transparent={true}
+        transparent
         animationType="fade"
+        onRequestClose={() => setShowConfirmModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Ionicons name="train-outline" size={50} color={PRIMARY} style={{ marginBottom: 10 }} />
+            <Ionicons name="train-outline" size={40} color={PRIMARY} />
             <Text style={styles.modalTitle}>Confirm Your Order</Text>
-            <Text style={styles.modalMessage}>
-              Are you sure you want to place this order? The food will be delivered to:
-            </Text>
-            <View style={styles.stationBadge}>
-              <Ionicons name="location-outline" size={16} color="#444" />
-              <Text style={styles.stationName}>{deliveryStation}</Text>
+            <View style={styles.modalInfoCard}>
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Train Number</Text>
+                <Text style={styles.modalValue}>
+                  {trainDetails?.trainNumber ?? "Not Available"}
+                </Text>
+              </View>
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Delivery Station</Text>
+                <Text style={styles.modalValue}>{deliveryStation}</Text>
+              </View>
+              <View style={[styles.modalInfoRow, styles.modalSeatRow]}>
+                <Text style={styles.modalLabel}>Seat Number</Text>
+                <TextInput
+                  style={styles.modalSeatInput}
+                  value={seatNumberInput}
+                  onChangeText={setSeatNumberInput}
+                  placeholder="Enter seat"
+                  returnKeyType="done"
+                />
+              </View>
             </View>
+            <View style={styles.modalInfoCard}>
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Payment</Text>
+                <Text style={styles.modalValue}>
+                  {paymentMethod === "Card"
+                    ? "Online Payment (Card)"
+                    : "Cash on Delivery"}
+                </Text>
+              </View>
+              <View style={styles.modalInfoRow}>
+                <Text style={styles.modalLabel}>Total</Text>
+                <Text style={styles.modalValue}>{formatLKR(total)}</Text>
+              </View>
+            </View>
+            {orderError && <Text style={styles.modalError}>{orderError}</Text>}
             <View style={styles.modalActions}>
               <TouchableOpacity
-                style={styles.cancelBtn}
+                style={[styles.actionBtn, styles.cancelBtn]}
                 onPress={() => setShowConfirmModal(false)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.confirmBtn}
+                style={[
+                  styles.actionBtn,
+                  styles.confirmBtn,
+                  isSubmitting && { opacity: 0.6 },
+                ]}
                 onPress={handleConfirmOrder}
+                disabled={isSubmitting}
               >
-                <Text style={styles.confirmText}>Confirm</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.confirmText}>Confirm</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 }
@@ -508,41 +638,64 @@ const styles = StyleSheet.create({
     color: "#111",
     marginBottom: 8,
   },
-  modalMessage: {
-    fontSize: 15,
-    color: "#555",
-    textAlign: "center",
-    marginBottom: 16,
-    lineHeight: 22,
+  modalInfoCard: {
+    width: "100%",
+    backgroundColor: "#f9f9f9",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
   },
-  stationBadge: {
+  modalInfoRow: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: PEACH,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 24,
+    marginBottom: 10,
   },
-  stationName: {
-    fontSize: 16,
+  modalSeatRow: {
+    alignItems: "flex-start",
+  },
+  modalLabel: {
+    fontSize: 13,
+    color: "#7e7e7e",
+  },
+  modalValue: {
+    fontSize: 15,
     fontWeight: "700",
-    color: PRIMARY,
-    marginLeft: 6,
+    color: "#111",
+    maxWidth: "60%",
+    textAlign: "right",
+  },
+  modalSeatInput: {
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    width: "50%",
+    marginTop: 4,
+    backgroundColor: "#fff",
+  },
+  modalError: {
+    color: "#c62828",
+    fontSize: 13,
+    marginBottom: 6,
+    textAlign: "center",
   },
   modalActions: {
     flexDirection: "row",
     gap: 12,
     width: "100%",
   },
-  cancelBtn: {
+  actionBtn: {
     flex: 1,
-    paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: "#f5f5f5",
+    paddingVertical: 14,
     alignItems: "center",
-    borderWidth: 1,
+  },
+  cancelBtn: {
+    backgroundColor: "#f5f5f5",
     borderColor: "#e0e0e0",
+    borderWidth: 1,
   },
   cancelText: {
     color: "#555",
@@ -550,11 +703,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   confirmBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
     backgroundColor: PRIMARY,
-    alignItems: "center",
     shadowColor: PRIMARY,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,

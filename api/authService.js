@@ -7,6 +7,9 @@ import {
   startLoading,
 } from "../redux/slices/authSlice";
 import apiClient from "./client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LATEST_ORDER_ID_KEY, TRAIN_DETAILS_KEY, USER_ID_KEY } from "../constants/train";
+// import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BASE64_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -120,7 +123,7 @@ const normalizeAuthResponse = (response) => {
   };
 };
 
-const saveSession = async (token, role, userInfo) => {
+const saveSession = async (token, role, userInfo, userId) => {
   if (!token) return;
   await Promise.all([
     SecureStore.setItemAsync("userToken", token),
@@ -128,6 +131,9 @@ const saveSession = async (token, role, userInfo) => {
     userInfo
       ? SecureStore.setItemAsync("userInfo", JSON.stringify(userInfo))
       : Promise.resolve(),
+    userId != null
+      ? AsyncStorage.setItem(USER_ID_KEY, String(userId))
+      : AsyncStorage.removeItem(USER_ID_KEY),
   ]);
 };
 
@@ -136,6 +142,11 @@ const clearSession = async () => {
     SecureStore.deleteItemAsync("userToken"),
     SecureStore.deleteItemAsync("userRole"),
     SecureStore.deleteItemAsync("userInfo"),
+    AsyncStorage.removeItem("trainDetails"),
+    AsyncStorage.removeItem("deliveryStation"),
+    AsyncStorage.removeItem("userEmail"),
+    AsyncStorage.removeItem(USER_ID_KEY),
+    AsyncStorage.removeItem(LATEST_ORDER_ID_KEY),
   ]);
 };
 
@@ -151,7 +162,7 @@ const authService = {
         throw new Error("Missing auth token");
       }
       console.log("Auth token:", payload);
-      await saveSession(token, role, { id: userId, role, payload });
+      await saveSession(token, role, { id: userId, role, payload }, userId);
       dispatch(authSuccess({ token, role, userId, userInfo: payload }));
       return response.data;
     } catch (error) {
@@ -173,7 +184,7 @@ const authService = {
         throw new Error("Missing auth token");
       }
 
-      await saveSession(token, role, { id: userId, role, payload });
+      await saveSession(token, role, { id: userId, role, payload }, userId);
       dispatch(authSuccess({ token, role, userId, userInfo: payload }));
       return response.data;
     } catch (error) {
