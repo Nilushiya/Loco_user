@@ -53,4 +53,23 @@ Join our community of developers creating universal apps.
 
 npx expo start , expo start - to run dev mode
 eas build , npx expo export , expo start --no-dev --minify - to run prod mode
-set the baseUrl , 
+set the baseUrl ,
+
+## Live tracking feature
+
+- The new `(user)/tracking` screen keeps dispatch informed by sending a GPS fix every 10 seconds, even in the background.
+- `hooks/useLocationTracking.ts` orchestrates permission prompting, foreground + background listeners, movement-aware accuracy, battery-friendly throttling, and Socket.IO reconnection.
+- Background updates are registered through `services/backgroundLocationTask.ts` so the app can keep emitting location when minimized.
+
+## Tracking backend
+
+1. `cd server`
+2. `npm install`
+3. Copy `.env.example` to `.env` and adjust `PORT`, `GEO_RADIUS_METERS`, and other settings as needed.
+4. `npm start` to run Express + Socket.IO on the configured port.
+5. Point `EXPO_PUBLIC_TRACKING_SOCKET_URL` and `EXPO_PUBLIC_TRACKING_API_URL` at this backend from your Expo `.env.*` files.
+
+## Environment updates
+
+- Added dependencies: `expo-location`, `expo-task-manager`, `socket.io-client` (run `npm install` after pulling the changes).
+- Define `EXPO_PUBLIC_TRACKING_SOCKET_URL` / `EXPO_PUBLIC_TRACKING_API_URL` for each environment so the tracker knows where to emit location payloads and fetch nearby restaurants.

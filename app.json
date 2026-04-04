@@ -9,7 +9,18 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["location", "fetch"],
+        "NSLocationWhenInUseUsageDescription":
+          "We need your location to provide live tracking for delivery staff.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription":
+          "Allowing background access keeps dispatch informed even when the app is closed.",
+        "NSLocationAlwaysUsageDescription":
+          "Live tracking lets the backend know where you are so the experience stays accurate.",
+        "NSMotionUsageDescription":
+          "Motion data stabilizes GPS accuracy while you are on the move."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +30,18 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "foregroundService": {
+        "notificationTitle": "Loco Live Tracking",
+        "notificationBody": "Sharing location with dispatch",
+        "notificationColor": "#FF7A00"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE"
+      ]
     },
     "web": {
       "output": "static",

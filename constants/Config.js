@@ -8,6 +8,9 @@ import { Platform } from "react-native";
 const WEB_API_URL = "http://localhost:3001";
 const MOBILE_API_URL = "http://172.19.8.0:3001"; // for mobile devices
 const PROD_API_URL = process.env.EXPO_PUBLIC_PROD_API_URL; // for production server
+const TRACKING_SOCKET_URL_VALUE = process.env.EXPO_PUBLIC_TRACKING_SOCKET_URL;
+const TRACKING_API_URL_VALUE =
+  process.env.EXPO_PUBLIC_TRACKING_API_URL ?? TRACKING_SOCKET_URL_VALUE;
 
 // Determine current environment
 const ENV = {
@@ -32,8 +35,20 @@ if (!ENV.apiUrl) {
   }
 }
 
+if (!TRACKING_SOCKET_URL_VALUE || !TRACKING_API_URL_VALUE) {
+  const trackingError = `CONFIG WARNING: Tracking URLs are missing. `
+    + `Make sure EXPO_PUBLIC_TRACKING_SOCKET_URL and EXPO_PUBLIC_TRACKING_API_URL are set in your .env files.`;
+  if (__DEV__) {
+    console.warn(trackingError);
+  } else {
+    console.error(trackingError);
+  }
+}
+
 // Centralized Export
 export const BASE_URL = ENV.apiUrl;
+export const TRACKING_SOCKET_URL = TRACKING_SOCKET_URL_VALUE;
+export const TRACKING_API_URL = TRACKING_API_URL_VALUE;
 
 export const ENDPOINTS = {
   AUTH_LOGIN: "/user/login",

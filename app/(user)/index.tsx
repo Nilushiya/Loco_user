@@ -254,6 +254,20 @@ const Dashboard = () => {
           <Text style={styles.searchPlaceholder}>Search for food or restaurants</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.trackingCard}
+          onPress={() => router.push("/(user)/tracking")}
+        >
+          <Ionicons name="navigate-circle" size={28} color="#FF7A00" />
+          <View style={styles.trackingCopy}>
+            <Text style={styles.trackingLabel}>Live Delivery Tracking</Text>
+            <Text style={styles.trackingDescription}>
+              Continuously share your location with the dispatch team.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
         {/* Categories Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Food Categories</Text>
@@ -416,6 +430,35 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     color: "#888",
     fontSize: 13,
+  },
+  trackingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff7f2",
+    marginHorizontal: 15,
+    marginVertical: 12,
+    padding: 15,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#ffe0c7",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  trackingCopy: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  trackingLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  trackingDescription: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
   },
   button: {
     position: "absolute",
