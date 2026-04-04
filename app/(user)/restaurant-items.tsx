@@ -2,6 +2,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   SafeAreaView,
@@ -25,7 +26,7 @@ const RestaurantItemsScreen = () => {
   const restaurantId = Number(params.restaurantId);
   const restaurantName = params.restaurantName ?? "Restaurant";
   const { items, loading, error } = useRestaurantItems(restaurantId);
-  const { cart, addItem, removeItem } = useCart();
+  const { cart, addItem, removeItem, clearAll } = useCart();
 
   const buildImageUrl = (path: string) => {
     if (!path) return "";
@@ -41,7 +42,16 @@ const RestaurantItemsScreen = () => {
 
   const storeId = restaurantId ? String(restaurantId) : "0";
 
-  const handleAdd = (item: RestaurantItem) => {
+  const handleAdd = async (item: RestaurantItem) => {
+    const isDifferentStore = cart && cart.storeId && cart.storeId !== storeId;
+    if (isDifferentStore) {
+      Alert.alert(
+        "Cart Reset",
+        "Adding items from a new restaurant will replace the current cart."
+      );
+      await clearAll();
+    }
+
     addItem(storeId, restaurantName, "Unknown Area", {
       id: String(item.id),
       name: item.name,
@@ -58,6 +68,25 @@ const RestaurantItemsScreen = () => {
     if (!cart || cart.storeId !== String(restaurantId)) return 0;
     const key = `${cart.storeId}-${itemId}`;
     return cart.items[key]?.quantity ?? 0;
+  };
+
+  const cartItemsArray = React.useMemo(
+    () => (cart && cart.items ? Object.values(cart.items) : []),
+    [cart]
+  );
+
+  const cartItemCount = React.useMemo(
+    () => cartItemsArray.reduce((sum, item) => sum + item.quantity, 0),
+    [cartItemsArray]
+  );
+
+  const cartTotal = React.useMemo(
+    () => cartItemsArray.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    [cartItemsArray]
+  );
+
+  const handleViewCart = () => {
+    router.push("/(user)/cart");
   };
 
   const headerContent = (
@@ -126,10 +155,10 @@ const RestaurantItemsScreen = () => {
           const imageUri = buildImageUrl(item.image);
           return (
             <View style={styles.itemCard}>
-            <Image
-              source={{ uri: imageUri || defaultItemImage }}
-              style={styles.itemThumb}
-            />
+              <Image
+                source={{ uri: imageUri || defaultItemImage }}
+                style={styles.itemThumb}
+              />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.itemName}>{item.name}</Text>
                 <Text style={styles.itemDescription}>{item.description}</Text>
@@ -174,6 +203,27 @@ const RestaurantItemsScreen = () => {
         }}
         ItemSeparatorComponent={() => <View style={styles.divider} />}
       />
+      {cartItemCount > 0 && (
+        <View style={styles.toastWrapper} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.toastCard}
+            activeOpacity={0.9}
+            onPress={handleViewCart}
+          >
+            <View style={styles.toastText}>
+              <Text style={styles.toastTitle}>
+                {cartItemCount} item{cartItemCount === 1 ? "" : "s"} · LKR{" "}
+                {cartTotal.toLocaleString("en-LK", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </Text>
+              <Text style={styles.toastSubtitle}>View cart</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#FF7A00" />
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -265,7 +315,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   list: {
-    paddingBottom: 40,
+    paddingBottom: 140,
   },
   itemCard: {
     flexDirection: "row",
@@ -341,5 +391,41 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "#f1f1f1",
     marginVertical: 14,
+  },
+  toastWrapper: {
+    position: "absolute",
+    bottom: 20,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  toastCard: {
+    width: "92%",
+    backgroundColor: "#ffd38c",
+    borderWidth: 1,
+    borderColor: "#FF7A00",
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  toastText: {
+    flex: 1,
+  },
+  toastTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111",
+  },
+  toastSubtitle: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 2,
   },
 });

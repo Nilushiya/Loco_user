@@ -8,6 +8,9 @@ import { Provider, useDispatch, useSelector } from 'react-redux';
 import { authSuccess } from '../redux/slices/authSlice';
 import { store } from '../redux/store';
 
+const TRAIN_DETAILS_KEY = 'trainDetails';
+const TRAIN_DETAILS_TTL_MS = 24 * 60 * 60 * 1000;
+
 function RootLayoutNav() {
   const { token, role } = useSelector((state: any) => state.auth);
   const segments = useSegments();
@@ -57,6 +60,23 @@ function RootLayoutNav() {
     const inFormGroup = segments[0] === 'form';
     const effectiveRole = role ?? 'User';
 
+    const hasValidTrainDetails = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+        if (!raw) return false;
+
+        const parsed = JSON.parse(raw);
+        if (parsed?.savedAt && Date.now() - parsed.savedAt < TRAIN_DETAILS_TTL_MS) {
+          return true;
+        }
+      } catch (error) {
+        console.error("Failed to validate train details", error);
+      }
+
+      await AsyncStorage.multiRemove([TRAIN_DETAILS_KEY, 'deliveryStation']);
+      return false;
+    };
+
     const checkInitialRoute = async () => {
       if (!token) {
         if (!inAuthGroup) {
@@ -71,14 +91,15 @@ function RootLayoutNav() {
       }
 
       if (effectiveRole === 'User' && !inUserGroup && !inFormGroup) {
-        const station = await AsyncStorage.getItem('deliveryStation');
-        if (!station) {
+        const hasDetails = await hasValidTrainDetails();
+        if (!hasDetails) {
           router.replace('/form/train-details' as any);
         } else {
           router.replace('/(user)' as any);
         }
       }
     };
+
     checkInitialRoute();
   }, [token, role, isReady, segments]);
 

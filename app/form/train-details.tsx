@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -16,18 +17,25 @@ import {
 } from "react-native";
 import { Colors } from "../../constants/theme";
 
+const TRAIN_DETAILS_KEY = "trainDetails";
+const TRAIN_DETAILS_TTL_MS = 24 * 60 * 60 * 1000;
+
 export default function TrainDetailsScreen() {
   const router = useRouter();
   const [trainNumber, setTrainNumber] = useState("");
   const [departure, setDeparture] = useState("");
   const [arrival, setArrival] = useState("");
+  const [seatNumber, setSeatNumber] = useState("");
   const [ticketImage, setTicketImage] = useState<string | null>(null);
   const [errors, setErrors] = useState<{
     trainNumber?: string;
     departure?: string;
     arrival?: string;
+    seatNumber?: string;
     ticketImage?: string;
   }>({});
+  const [isCheckingSaved, setIsCheckingSaved] = useState(true);
+  const isMounted = useRef(true);
 
   // 🇱🇰 Sri Lankan Train Number Validation
   // Usually 3-5 digit numbers like 1001, 8056 etc.
@@ -67,11 +75,19 @@ export default function TrainDetailsScreen() {
     }
   };
 
+  const handleSeatChange = (text: string) => {
+    setSeatNumber(text);
+    if (text.trim().length > 0) {
+      clearError("seatNumber");
+    }
+  };
+
   const validateForm = () => {
     let newErrors: {
       trainNumber?: string;
       departure?: string;
       arrival?: string;
+      seatNumber?: string;
       ticketImage?: string;
     } = {};
     let isValid = true;
@@ -94,6 +110,11 @@ export default function TrainDetailsScreen() {
       isValid = false;
     } else if (departure.trim().toLowerCase() === arrival.trim().toLowerCase() && departure) {
       newErrors.arrival = "Arrival cannot be the same as departure";
+      isValid = false;
+    }
+
+    if (!seatNumber) {
+      newErrors.seatNumber = "Please enter your seat number";
       isValid = false;
     }
 
@@ -147,6 +168,15 @@ export default function TrainDetailsScreen() {
   const handleSubmit = async () => {
     if (!validateForm()) return;
     try {
+      const payload = {
+        trainNumber,
+        departure,
+        arrival,
+        seatNumber,
+        ticketImage,
+        savedAt: Date.now(),
+      };
+      await AsyncStorage.setItem("trainDetails", JSON.stringify(payload));
       await AsyncStorage.setItem("deliveryStation", arrival);
       Alert.alert("Success", "Train details submitted successfully!", [
         {
@@ -158,6 +188,52 @@ export default function TrainDetailsScreen() {
       console.log("Error saving station", error);
     }
   };
+
+  useEffect(() => {
+    const verifyTrainDetails = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+        if (!raw) {
+          if (isMounted.current) setIsCheckingSaved(false);
+          return;
+        }
+
+        const parsed = JSON.parse(raw);
+        const hasValidRecord =
+          parsed?.savedAt && Date.now() - parsed.savedAt < TRAIN_DETAILS_TTL_MS;
+
+        if (hasValidRecord) {
+          router.replace("/(user)");
+          return;
+        }
+
+        await AsyncStorage.multiRemove([TRAIN_DETAILS_KEY, "deliveryStation"]);
+      } catch (error) {
+        console.log("Error checking train details", error);
+      }
+
+      if (isMounted.current) {
+        setIsCheckingSaved(false);
+      }
+    };
+
+    verifyTrainDetails();
+
+    return () => {
+      isMounted.current = false;
+    };
+  }, [router]);
+
+  if (isCheckingSaved) {
+    return (
+      <LinearGradient colors={["#FEEDE6", "#FFFFFF"]} style={styles.gradient}>
+        <View style={[styles.container, { justifyContent: "center" }]}>
+          <ActivityIndicator size="large" color={Colors.default.primary} />
+          <Text style={styles.checkingText}>Checking your train details...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient colors={["#FEEDE6", "#FFFFFF"]} style={styles.gradient}>
@@ -211,6 +287,20 @@ export default function TrainDetailsScreen() {
           />
           {errors.arrival && (
             <Text style={styles.errorText}>{errors.arrival}</Text>
+          )}
+        </View>
+
+        {/* Seat */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={[styles.input, errors.seatNumber && styles.errorInput]}
+            placeholder="Seat Number"
+            placeholderTextColor="#999"
+            value={seatNumber}
+            onChangeText={handleSeatChange}
+          />
+          {errors.seatNumber && (
+            <Text style={styles.errorText}>{errors.seatNumber}</Text>
           )}
         </View>
 
@@ -294,6 +384,12 @@ const styles = StyleSheet.create({
     marginBottom: 35,
     color: "#1A1A1A",
     lineHeight: 28,
+  },
+  checkingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#555",
+    textAlign: "center",
   },
   inputContainer: {
     marginBottom: 16,
