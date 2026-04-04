@@ -1,20 +1,20 @@
-import apiClient from './client';
-import { ENDPOINTS } from '../constants/Config';
+import * as SecureStore from "expo-secure-store";
+import { ENDPOINTS } from "../constants/Config";
 import {
-  startLoading,
-  authSuccess,
   authFailure,
+  authSuccess,
   logout,
-} from '../redux/slices/authSlice';
-import * as SecureStore from 'expo-secure-store';
+  startLoading,
+} from "../redux/slices/authSlice";
+import apiClient from "./client";
 
 const BASE64_CHARS =
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 
 const base64Decode = (input) => {
-  let str = '';
+  let str = "";
   let i = 0;
-  input = input.replace(/[^A-Za-z0-9+/=]/g, '');
+  input = input.replace(/[^A-Za-z0-9+/=]/g, "");
 
   while (i < input.length) {
     const enc1 = BASE64_CHARS.indexOf(input.charAt(i++));
@@ -39,28 +39,31 @@ const base64Decode = (input) => {
 };
 
 const decodeJwtPayload = (token) => {
-  if (!token || typeof token !== 'string') return null;
+  if (!token || typeof token !== "string") return null;
   try {
-    const base64Url = token.split('.')[1];
+    const base64Url = token.split(".")[1];
     if (!base64Url) return null;
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      "=",
+    );
     const decoded = base64Decode(padded);
     const percentEncoded = decoded
-      .split('')
+      .split("")
       .map((char) => `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`)
-      .join('');
+      .join("");
     return JSON.parse(decodeURIComponent(percentEncoded));
   } catch (error) {
-    console.warn('Unable to decode auth token payload', error);
+    console.warn("Unable to decode auth token payload", error);
     return null;
   }
 };
 
 const extractToken = (value) => {
   if (!value) return null;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
     return (
       extractToken(value.token) ??
       extractToken(value.data) ??
@@ -71,52 +74,68 @@ const extractToken = (value) => {
   return null;
 };
 
-const normalizeAuthResponse = (response) => {
-  const payload = response?.data;
-  const token = extractToken(payload);
-  const explicitRole =
-    typeof payload === 'object' && payload !== null
-      ? payload.role ??
-        payload?.data?.role ??
-        payload?.roles?.[0] ??
-        payload?.data?.roles?.[0]
-      : undefined;
+const toObject = (value) => (value && typeof value === "object" ? value : null);
 
+const normalizeAuthResponse = (response) => {
+  const rawPayload = response?.data;
+  const token = extractToken(rawPayload);
   const decoded = token ? decodeJwtPayload(token) : null;
+
+  const responsePayload =
+    toObject(rawPayload?.data) ??
+    toObject(rawPayload?.payload) ??
+    toObject(rawPayload?.user) ??
+    toObject(rawPayload?.result) ??
+    toObject(rawPayload);
+
+  const mergedPayload =
+    decoded || responsePayload
+      ? { ...(decoded ?? {}), ...(responsePayload ?? {}) }
+      : null;
+
+  const explicitRole =
+    responsePayload?.role ??
+    responsePayload?.data?.role ??
+    responsePayload?.roles?.[0] ??
+    responsePayload?.data?.roles?.[0] ??
+    rawPayload?.role ??
+    rawPayload?.data?.role;
+
   const decodedRole =
     decoded?.role ?? decoded?.roles?.[0] ?? decoded?.data?.role;
-  const decodedId =
-    decoded?.id ??
-    decoded?.userId ??
-    decoded?.data?.id ??
-    decoded?.data?.userId ??
-    payload?.id ??
-    payload?.data?.id;
+
+  const finalPayload = mergedPayload ?? rawPayload ?? null;
+  const resolvedId =
+    finalPayload?.id ??
+    finalPayload?.userId ??
+    finalPayload?.data?.id ??
+    finalPayload?.data?.userId ??
+    null;
 
   return {
     token,
-    role: explicitRole ?? decodedRole ?? 'USER',
-    userId: decodedId ?? null,
-    payload: decoded ?? payload,
+    role: explicitRole ?? decodedRole ?? finalPayload?.role ?? "USER",
+    userId: resolvedId,
+    payload: finalPayload,
   };
 };
 
 const saveSession = async (token, role, userInfo) => {
   if (!token) return;
   await Promise.all([
-    SecureStore.setItemAsync('userToken', token),
-    SecureStore.setItemAsync('userRole', role ?? 'User'),
+    SecureStore.setItemAsync("userToken", token),
+    SecureStore.setItemAsync("userRole", role ?? "User"),
     userInfo
-      ? SecureStore.setItemAsync('userInfo', JSON.stringify(userInfo))
+      ? SecureStore.setItemAsync("userInfo", JSON.stringify(userInfo))
       : Promise.resolve(),
   ]);
 };
 
 const clearSession = async () => {
   await Promise.all([
-    SecureStore.deleteItemAsync('userToken'),
-    SecureStore.deleteItemAsync('userRole'),
-    SecureStore.deleteItemAsync('userInfo'),
+    SecureStore.deleteItemAsync("userToken"),
+    SecureStore.deleteItemAsync("userRole"),
+    SecureStore.deleteItemAsync("userInfo"),
   ]);
 };
 
@@ -129,15 +148,15 @@ const authService = {
       const { token, role, userId, payload } = normalizeAuthResponse(response);
 
       if (!token) {
-        throw new Error('Missing auth token');
+        throw new Error("Missing auth token");
       }
-      
+      console.log("Auth token:", payload);
       await saveSession(token, role, { id: userId, role, payload });
       dispatch(authSuccess({ token, role, userId, userInfo: payload }));
       return response.data;
     } catch (error) {
       const errorMsg =
-        error.response?.data?.message || 'Login failed. Please try again.';
+        error.response?.data?.message || "Login failed. Please try again.";
       dispatch(authFailure(errorMsg));
       throw error;
     }
@@ -151,7 +170,7 @@ const authService = {
       const { token, role, userId, payload } = normalizeAuthResponse(response);
 
       if (!token) {
-        throw new Error('Missing auth token');
+        throw new Error("Missing auth token");
       }
 
       await saveSession(token, role, { id: userId, role, payload });
@@ -160,7 +179,7 @@ const authService = {
     } catch (error) {
       const errorMsg =
         error.response?.data?.message ||
-        'Registration failed. Please try again.';
+        "Registration failed. Please try again.";
       dispatch(authFailure(errorMsg));
       throw error;
     }

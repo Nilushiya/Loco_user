@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   FlatList,
   Image,
@@ -11,6 +11,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import apiClient from "../../api/client";
+import { useAppSelector } from "../../redux/hooks";
 
 const recentSearches = [
   "Kottu",
@@ -20,7 +22,7 @@ const recentSearches = [
   "Ramazan",
 ];
 
-const categories = [
+const staticCategories = [
   {
     id: "1",
     name: "Ramazan",
@@ -166,10 +168,44 @@ const searchPool = [
   ),
 ];
 
+const resolveCategoryName = (category: any) =>
+  category?.name ?? category?.category ?? category?.title ?? "Category";
+
+const resolveCategoryImage = (category: any) =>
+  category?.image ??
+  category?.photo ??
+  category?.thumbnail ??
+  "https://images.unsplash.com/photo-1528715471579-d1b1f5ca77b0?auto=format&fit=crop&w=120&q=80";
+
+const normalizeCategoryPayload = (payload: any) => {
+  if (!payload) return [];
+  const candidates = [
+    payload,
+    payload.data,
+    payload.categories,
+    payload.categoryItems,
+    payload.items,
+    payload.result,
+    payload.payload,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  return [];
+};
+
 const SearchScreen = () => {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [fetchedCategories, setFetchedCategories] = useState<any[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const token = useAppSelector((state) => state.auth.token);
 
   const goBackSafe = () => {
     if (router.canGoBack()) {
@@ -197,6 +233,53 @@ const SearchScreen = () => {
       return inName || inTags;
     });
   }, [query]);
+
+  const displayCategories =
+    fetchedCategories.length > 0 ? fetchedCategories : staticCategories;
+
+  const popularCategories = useMemo(() => {
+    const popular = displayCategories.filter(
+      (cat) =>
+        (cat?.popular ?? cat?.isPopular ?? cat?.metadata?.popular ?? false) ===
+        true
+    );
+    if (popular.length > 0) {
+      return popular.slice(0, 8);
+    }
+    return displayCategories.slice(0, 8);
+  }, [displayCategories]);
+
+  useEffect(() => {
+    if (!token) {
+      setFetchedCategories([]);
+      return;
+    }
+
+    let isMounted = true;
+    const loadCategories = async () => {
+      setLoadingCategories(true);
+      setCategoryError(null);
+      try {
+        const response = await apiClient.get("/api/categoryItems");
+        if (!isMounted) return;
+        setFetchedCategories(normalizeCategoryPayload(response.data));
+      } catch (error) {
+        if (!isMounted) return;
+        console.warn("Unable to fetch categories", error);
+        setCategoryError("Unable to load categories right now.");
+      } finally {
+        if (isMounted) {
+          setLoadingCategories(false);
+        }
+      }
+    };
+
+    loadCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [token]);
 
   const handleResultPress = (name: string) => {
     setSelected(name);
@@ -308,26 +391,40 @@ const SearchScreen = () => {
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Popular Categories</Text>
+              {loadingCategories && (
+                <Text style={styles.categoryMetaText}>Loading...</Text>
+              )}
+              {categoryError && (
+                <Text style={styles.categoryError}>{categoryError}</Text>
+              )}
               <FlatList
-                data={categories}
-                numColumns={4}
-                keyExtractor={(item) => item.id}
-                scrollEnabled={false}
-                columnWrapperStyle={{ justifyContent: "space-between" }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.categoryCard}
-                    onPress={() => {
-                      setQuery(item.name);
-                      setSelected(item.name);
-                      goToResults(item.name);
-                    }}
-                  >
-                    <Image source={{ uri: item.image }} style={styles.categoryImage} />
-                    <Text style={styles.categoryText}>{item.name}</Text>
-                  </TouchableOpacity>
-                )}
-              />
+              data={popularCategories}
+              numColumns={4}
+              keyExtractor={(item) =>
+                String(item.id ?? item._id ?? resolveCategoryName(item))
+              }
+              scrollEnabled={false}
+              columnWrapperStyle={{ justifyContent: "space-between" }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.categoryCard}
+                  onPress={() => {
+                    const categoryName = resolveCategoryName(item);
+                    setQuery(categoryName);
+                    setSelected(categoryName);
+                    goToResults(categoryName);
+                  }}
+                >
+                  <Image
+                    source={{ uri: resolveCategoryImage(item) }}
+                    style={styles.categoryImage}
+                  />
+                  <Text style={styles.categoryText}>
+                    {resolveCategoryName(item)}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
             </View>
           </>
         )}
@@ -387,6 +484,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 12,
     color: "#111",
+  },
+  categoryMetaText: {
+    fontSize: 12,
+    color: "#555",
+    marginBottom: 6,
+  },
+  categoryError: {
+    fontSize: 12,
+    color: "#d32f2f",
+    marginBottom: 6,
   },
   chipWrap: {
     flexDirection: "row",
