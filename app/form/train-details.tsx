@@ -1,10 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,25 +18,30 @@ import {
   View,
 } from "react-native";
 import { Colors } from "../../constants/theme";
+import { trainService, TrainOption, StationOption } from "../../services/trainService";
+import { TRAIN_DETAILS_KEY, TRAIN_DETAILS_TTL_MS } from "../../constants/train";
 
 export default function TrainDetailsScreen() {
-  const [trainNumber, setTrainNumber] = useState("");
-  const [departure, setDeparture] = useState("");
-  const [arrival, setArrival] = useState("");
+  const router = useRouter();
+  const [seatNumber, setSeatNumber] = useState("");
   const [ticketImage, setTicketImage] = useState<string | null>(null);
   const [errors, setErrors] = useState<{
-    trainNumber?: string;
+    train?: string;
     departure?: string;
     arrival?: string;
+    seatNumber?: string;
     ticketImage?: string;
   }>({});
-
-  // 🇱🇰 Sri Lankan Train Number Validation
-  // Usually 3-5 digit numbers like 1001, 8056 etc.
-  const isValidTrainNumber = (number: string) => {
-    const regex = /^[0-9]{3,5}$/;
-    return regex.test(number);
-  };
+  const [availableTrains, setAvailableTrains] = useState<TrainOption[]>([]);
+  const [availableStations, setAvailableStations] = useState<StationOption[]>([]);
+  const [selectedTrain, setSelectedTrain] = useState<TrainOption | null>(null);
+  const [selectedDepartureStation, setSelectedDepartureStation] = useState<StationOption | null>(null);
+  const [selectedArrivalStation, setSelectedArrivalStation] = useState<StationOption | null>(null);
+  const [pickerTarget, setPickerTarget] = useState<"train" | "departure" | "arrival" | null>(null);
+  const [isFetchingTrains, setIsFetchingTrains] = useState(false);
+  const [isFetchingStations, setIsFetchingStations] = useState(false);
+  const [isCheckingSaved, setIsCheckingSaved] = useState(true);
+  const isMounted = useRef(true);
 
   const clearError = (field: keyof typeof errors) => {
     if (errors[field]) {
@@ -39,58 +49,70 @@ export default function TrainDetailsScreen() {
     }
   };
 
-  const handleTrainNumberChange = (text: string) => {
-    setTrainNumber(text);
-    if (isValidTrainNumber(text)) {
-      clearError("trainNumber");
-    } else if (text.length > 0) {
-      setErrors(prev => ({ ...prev, trainNumber: "Train number should be 3-5 digits" }));
-    } else {
-      clearError("trainNumber");
+  const handleSeatChange = (text: string) => {
+    setSeatNumber(text);
+    if (text.trim().length > 0) {
+      clearError("seatNumber");
     }
   };
 
-  const handleDepartureChange = (text: string) => {
-    setDeparture(text);
-    if (text.trim().length > 0) {
-      clearError("departure");
-    }
+  const openPicker = (target: "train" | "departure" | "arrival") => {
+    setPickerTarget(target);
   };
 
-  const handleArrivalChange = (text: string) => {
-    setArrival(text);
-    if (text.trim().length > 0) {
-      clearError("arrival");
+  const handlePickerSelect = (option: TrainOption | StationOption) => {
+    if (pickerTarget === "train") {
+      setSelectedTrain(option as TrainOption);
+      setErrors((prev) => ({ ...prev, train: undefined }));
+    } else if (pickerTarget === "departure") {
+      const selected = option as StationOption;
+      setSelectedDepartureStation(selected);
+      setErrors((prev) => ({ ...prev, departure: undefined }));
+      if (selectedArrivalStation && selectedArrivalStation.id === selected.id) {
+        setSelectedArrivalStation(null);
+        setErrors((prev) => ({ ...prev, arrival: undefined }));
+      }
+    } else if (pickerTarget === "arrival") {
+      setSelectedArrivalStation(option as StationOption);
+      setErrors((prev) => ({ ...prev, arrival: undefined }));
     }
+    setPickerTarget(null);
   };
 
   const validateForm = () => {
     let newErrors: {
-      trainNumber?: string;
+      train?: string;
       departure?: string;
       arrival?: string;
+      seatNumber?: string;
       ticketImage?: string;
     } = {};
     let isValid = true;
 
-    if (!trainNumber) {
-      newErrors.trainNumber = "Please enter the train number";
-      isValid = false;
-    } else if (!isValidTrainNumber(trainNumber)) {
-      newErrors.trainNumber = "Invalid format (3-5 digits required)";
+    if (!selectedTrain) {
+      newErrors.train = "Please select your train";
       isValid = false;
     }
 
-    if (!departure) {
-      newErrors.departure = "Please enter the departure station";
+    if (!selectedDepartureStation) {
+      newErrors.departure = "Please select a departure station";
       isValid = false;
     }
 
-    if (!arrival) {
-      newErrors.arrival = "Please enter the arrival station";
+    if (!selectedArrivalStation) {
+      newErrors.arrival = "Please select an arrival station";
       isValid = false;
-    } else if (departure.trim().toLowerCase() === arrival.trim().toLowerCase() && departure) {
+    } else if (
+      selectedDepartureStation &&
+      selectedArrivalStation &&
+      selectedDepartureStation.id === selectedArrivalStation.id
+    ) {
       newErrors.arrival = "Arrival cannot be the same as departure";
+      isValid = false;
+    }
+
+    if (!seatNumber) {
+      newErrors.seatNumber = "Please enter your seat number";
       isValid = false;
     }
 
@@ -141,10 +163,115 @@ export default function TrainDetailsScreen() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
-    Alert.alert("Success", "Train details submitted successfully!");
+    try {
+      const trainName = selectedTrain?.name ?? "";
+      const trainNumberValue = selectedTrain?.mname ?? trainName;
+      const trainType = selectedTrain?.type ?? "";
+      const departureName = selectedDepartureStation?.name ?? "";
+      const arrivalName = selectedArrivalStation?.name ?? "";
+      const payload = {
+        trainNumber: trainNumberValue,
+        trainName,
+        trainMName: selectedTrain?.mname ?? "",
+        trainType,
+        trainId: selectedTrain?.id ?? 0,
+        departure: departureName,
+        departureStationId: selectedDepartureStation?.id ?? 0,
+        arrival: arrivalName,
+        arrivalStationId: selectedArrivalStation?.id ?? 0,
+        seatNumber,
+        ticketImage,
+        savedAt: Date.now(),
+      };
+      await AsyncStorage.setItem("trainDetails", JSON.stringify(payload));
+      await AsyncStorage.setItem("deliveryStation", arrivalName);
+      Alert.alert("Success", "Train details submitted successfully!", [
+        {
+          text: "OK",
+          onPress: () => router.replace("/(user)"),
+        },
+      ]);
+    } catch (error) {
+      console.log("Error saving station", error);
+    }
   };
+
+  useEffect(() => {
+    const verifyTrainDetails = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+        if (!raw) {
+          if (isMounted.current) setIsCheckingSaved(false);
+          return;
+        }
+
+        const parsed = JSON.parse(raw);
+        const hasValidRecord =
+          parsed?.savedAt && Date.now() - parsed.savedAt < TRAIN_DETAILS_TTL_MS;
+
+        if (hasValidRecord) {
+          router.replace("/(user)");
+          return;
+        }
+
+        await AsyncStorage.multiRemove([TRAIN_DETAILS_KEY, "deliveryStation"]);
+      } catch (error) {
+        console.log("Error checking train details", error);
+      }
+
+      if (isMounted.current) {
+        setIsCheckingSaved(false);
+      }
+    };
+
+    verifyTrainDetails();
+
+    return () => {
+      isMounted.current = false;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    const loadTrains = async () => {
+      setIsFetchingTrains(true);
+      try {
+        const trains = await trainService.fetchTrains();
+        setAvailableTrains(trains);
+      } catch (error) {
+        console.warn("Failed to load trains", error);
+      } finally {
+        setIsFetchingTrains(false);
+      }
+    };
+
+    const loadStations = async () => {
+      setIsFetchingStations(true);
+      try {
+        const stations = await trainService.fetchStations();
+        setAvailableStations(stations);
+      } catch (error) {
+        console.warn("Failed to load stations", error);
+      } finally {
+        setIsFetchingStations(false);
+      }
+    };
+
+    loadTrains();
+    loadStations();
+  }, []);
+
+  if (isCheckingSaved) {
+    return (
+      <LinearGradient colors={["#FEEDE6", "#FFFFFF"]} style={styles.gradient}>
+        <View style={[styles.container, { justifyContent: "center" }]}>
+          <ActivityIndicator size="large" color={Colors.default.primary} />
+          <Text style={styles.checkingText}>Checking your train details...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient colors={["#FEEDE6", "#FFFFFF"]} style={styles.gradient}>
@@ -158,46 +285,93 @@ export default function TrainDetailsScreen() {
           Enter your train details to place your order
         </Text>
 
-        {/* Train Number */}
         <View style={styles.inputContainer}>
-          <TextInput
-            style={[styles.input, errors.trainNumber && styles.errorInput]}
-            placeholder="Train Number (e.g. 1001)"
-            placeholderTextColor="#999"
-            value={trainNumber}
-            onChangeText={handleTrainNumberChange}
-            keyboardType="numeric"
-          />
-          {errors.trainNumber && (
-            <Text style={styles.errorText}>{errors.trainNumber}</Text>
-          )}
+          <Text style={[styles.selectLabel, errors.train && styles.errorLabel]}>
+            Select Train
+          </Text>
+          <TouchableOpacity
+            style={[styles.selectBox, errors.train && styles.errorBorder]}
+            onPress={() => openPicker("train")}
+          >
+            {isFetchingTrains ? (
+              <ActivityIndicator color="#444" />
+            ) : (
+              <Text
+                style={[
+                  styles.selectText,
+                  selectedTrain ? undefined : styles.placeholderText,
+                ]}
+              >
+                {selectedTrain
+                  ? `${selectedTrain.mname ?? selectedTrain.name} ${
+                      selectedTrain.type ? `(${selectedTrain.type})` : ""
+                    }`
+                  : "Choose your train"}
+              </Text>
+            )}
+          </TouchableOpacity>
+          {errors.train && <Text style={styles.errorText}>{errors.train}</Text>}
         </View>
 
-        {/* Departure */}
         <View style={styles.inputContainer}>
-          <TextInput
-            style={[styles.input, errors.departure && styles.errorInput]}
-            placeholder="Departure Station"
-            placeholderTextColor="#999"
-            value={departure}
-            onChangeText={handleDepartureChange}
-          />
+          <Text style={[styles.selectLabel, errors.departure && styles.errorLabel]}>
+            Departure Station
+          </Text>
+          <TouchableOpacity
+            style={[styles.selectBox, errors.departure && styles.errorBorder]}
+            onPress={() => openPicker("departure")}
+          >
+            <Text
+              style={[
+                styles.selectText,
+                selectedDepartureStation ? undefined : styles.placeholderText,
+              ]}
+            >
+              {selectedDepartureStation
+                ? selectedDepartureStation.name
+                : "Select departure"}
+            </Text>
+          </TouchableOpacity>
           {errors.departure && (
             <Text style={styles.errorText}>{errors.departure}</Text>
           )}
         </View>
 
-        {/* Arrival */}
         <View style={styles.inputContainer}>
-          <TextInput
-            style={[styles.input, errors.arrival && styles.errorInput]}
-            placeholder="Arrival Station"
-            placeholderTextColor="#999"
-            value={arrival}
-            onChangeText={handleArrivalChange}
-          />
+          <Text style={[styles.selectLabel, errors.arrival && styles.errorLabel]}>
+            Arrival Station
+          </Text>
+          <TouchableOpacity
+            style={[styles.selectBox, errors.arrival && styles.errorBorder]}
+            onPress={() => openPicker("arrival")}
+          >
+            <Text
+              style={[
+                styles.selectText,
+                selectedArrivalStation ? undefined : styles.placeholderText,
+              ]}
+            >
+              {selectedArrivalStation
+                ? selectedArrivalStation.name
+                : "Select arrival"}
+            </Text>
+          </TouchableOpacity>
           {errors.arrival && (
             <Text style={styles.errorText}>{errors.arrival}</Text>
+          )}
+        </View>
+
+        {/* Seat */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={[styles.input, errors.seatNumber && styles.errorInput]}
+            placeholder="Seat Number"
+            placeholderTextColor="#999"
+            value={seatNumber}
+            onChangeText={handleSeatChange}
+          />
+          {errors.seatNumber && (
+            <Text style={styles.errorText}>{errors.seatNumber}</Text>
           )}
         </View>
 
@@ -240,10 +414,66 @@ export default function TrainDetailsScreen() {
               </View>
             )}
           </View>
-          {errors.ticketImage && (
-            <Text style={styles.errorTextCenter}>{errors.ticketImage}</Text>
-          )}
+        {errors.ticketImage && (
+          <Text style={styles.errorTextCenter}>{errors.ticketImage}</Text>
+        )}
+      </View>
+
+      <Modal
+        visible={Boolean(pickerTarget)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPickerTarget(null)}
+      >
+        <View style={styles.pickerOverlay}>
+          <View style={styles.pickerContent}>
+            <Text style={styles.pickerTitle}>
+              {pickerTarget === "train"
+                ? "Select Train"
+                : "Select Station"}
+            </Text>
+            <FlatList
+              data={
+                pickerTarget === "train"
+                  ? availableTrains
+                  : availableStations
+              }
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.pickerItem}
+                  onPress={() => handlePickerSelect(item)}
+                >
+                  <Text style={styles.pickerItemText}>
+                    {pickerTarget === "train"
+                      ? `${
+                          (item as TrainOption).mname ??
+                          (item as TrainOption).name
+                        }${(item as TrainOption).type ? ` (${(item as TrainOption).type})` : ""}`
+                      : item.name}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              ItemSeparatorComponent={() => (
+                <View style={styles.pickerDivider} />
+              )}
+              ListEmptyComponent={() => (
+                <Text style={styles.pickerEmpty}>
+                  {pickerTarget === "train"
+                    ? "No trains available"
+                    : "No stations available"}
+                </Text>
+              )}
+            />
+            <TouchableOpacity
+              style={styles.pickerCancel}
+              onPress={() => setPickerTarget(null)}
+            >
+              <Text style={styles.pickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+      </Modal>
 
         {/* Submit Button */}
         <TouchableOpacity
@@ -282,6 +512,12 @@ const styles = StyleSheet.create({
     color: "#1A1A1A",
     lineHeight: 28,
   },
+  checkingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#555",
+    textAlign: "center",
+  },
   inputContainer: {
     marginBottom: 16,
     width: "100%",
@@ -304,6 +540,31 @@ const styles = StyleSheet.create({
   errorInput: {
     borderColor: Colors.default.primary,
     backgroundColor: "#FFF9F9",
+  },
+  selectLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#4a4a4a",
+    marginBottom: 6,
+  },
+  selectBox: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#F0F0F0",
+    backgroundColor: "#fff",
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    justifyContent: "center",
+  },
+  selectText: {
+    fontSize: 16,
+    color: "#111",
+  },
+  placeholderText: {
+    color: "#999",
+  },
+  errorBorder: {
+    borderColor: Colors.default.primary,
   },
   errorText: {
     color: "#e21313",
@@ -429,5 +690,49 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     letterSpacing: 0.5,
+  },
+  errorLabel: {
+    color: Colors.default.primary,
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  pickerContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: "60%",
+    padding: 18,
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  pickerItem: {
+    paddingVertical: 12,
+  },
+  pickerItemText: {
+    fontSize: 15,
+    color: "#222",
+  },
+  pickerDivider: {
+    height: 1,
+    backgroundColor: "#f0f0f0",
+  },
+  pickerEmpty: {
+    paddingVertical: 16,
+    textAlign: "center",
+    color: "#888",
+  },
+  pickerCancel: {
+    marginTop: 12,
+    alignItems: "center",
+  },
+  pickerCancelText: {
+    color: Colors.default.primary,
+    fontWeight: "700",
   },
 });

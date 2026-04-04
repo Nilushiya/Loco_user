@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   FlatList,
   Image,
@@ -10,7 +10,16 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
+import { useAppSelector } from "../../redux/hooks";
+import { useSearchItems } from "../../hooks/useSearchItems";
+import axios from "axios";
+import { BASE_URL } from "@/constants/Config";
+
+const apiClient = axios.create({
+  baseURL: BASE_URL,
+});
 
 const recentSearches = [
   "Kottu",
@@ -20,7 +29,7 @@ const recentSearches = [
   "Ramazan",
 ];
 
-const categories = [
+const staticCategories = [
   {
     id: "1",
     name: "Ramazan",
@@ -71,106 +80,94 @@ const categories = [
   },
 ];
 
-const stores = [
-  {
-    id: "s1",
-    name: "Wok To Walk",
-    area: "Kiribathgoda",
-    rating: "92.9%",
-    reviews: "500+",
-    eta: "45 - 55 min",
-    fee: "LKR 119.00",
-    logo: "https://images.unsplash.com/photo-1527181152855-fc03fc7949c8?auto=format&fit=crop&w=120&q=80",
-    items: [
-      {
-        id: "m1",
-        name: "Chicken Kottu",
-        price: "LKR 990.00",
-        rating: "94%",
-        reviews: "500+",
-        image: "https://images.unsplash.com/photo-1622396481228-34b4c4b29f70?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "chicken"],
-      },
-    ],
-  },
-  {
-    id: "s2",
-    name: "Mr. Kottu Grand Restaurant",
-    area: "Kiribathgoda",
-    rating: "79.8%",
-    reviews: "500+",
-    eta: "50 - 60 min",
-    fee: "LKR 139.00",
-    logo: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=120&q=80",
-    highlight: "Combo Deal",
-    items: [
-      {
-        id: "m2",
-        name: "Roasted Chicken Kottu",
-        price: "LKR 1,500.00",
-        rating: "72%",
-        reviews: "100+",
-        image: "https://images.unsplash.com/photo-1481931098730-318b6f776db0?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "chicken"],
-      },
-      {
-        id: "m3",
-        name: "Cheese Kottu",
-        price: "LKR 1,250.00",
-        rating: "80%",
-        reviews: "200+",
-        image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
-        tags: ["kottu", "cheese"],
-      },
-    ],
-  },
-  {
-    id: "s3",
-    name: "Devon Hotel & Bakery",
-    area: "Kiribathgoda",
-    rating: "92.8%",
-    reviews: "500+",
-    eta: "45 - 55 min",
-    fee: "LKR 99.00",
-    logo: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=120&q=80",
-    available: false,
-    items: [
-      {
-        id: "m4",
-        name: "Chicken Fried Rice",
-        price: "LKR 780.00",
-        rating: "96%",
-        reviews: "500+",
-        image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=80",
-        tags: ["rice", "chicken"],
-        available: false,
-      },
-    ],
-  },
-];
 
-const searchPool = [
-  ...stores.map((store) => ({
-    id: `store-${store.id}`,
-    name: store.name,
-    type: "Shop" as const,
-    tags: [store.area, ...store.items.flatMap((i) => i.tags)],
-  })),
-  ...stores.flatMap((store) =>
-    store.items.map((item) => ({
-      id: `item-${item.id}`,
-      name: item.name,
-      type: "Food" as const,
-      tags: item.tags,
-    }))
-  ),
-];
+
+const resolveCategoryName = (category: any) =>
+  category?.name ?? category?.category ?? category?.title ?? "Category";
+
+const resolveCategoryImage = (category: any) =>
+  category?.image ??
+  category?.photo ??
+  category?.thumbnail ??
+  "https://images.unsplash.com/photo-1528715471579-d1b1f5ca77b0?auto=format&fit=crop&w=120&q=80";
+
+const normalizeCategoryPayload = (payload: any) => {
+  if (!payload) return [];
+  const candidates = [
+    payload,
+    payload.data,
+    payload.categories,
+    payload.categoryItems,
+    payload.items,
+    payload.result,
+    payload.payload,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  return [];
+};
 
 const SearchScreen = () => {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [fetchedCategories, setFetchedCategories] = useState<any[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(
+    null
+  );
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const token = useAppSelector((state) => state.auth.token);
+  const { results, loading, error: searchError } = useSearchItems({
+    query,
+    latitude: coords?.latitude,
+    longitude: coords?.longitude,
+  });
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== Location.PermissionStatus.GRANTED) {
+          if (active) {
+            setLocationError(
+              "Enable location access for nearby results and recommendations."
+            );
+          }
+          return;
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (!active) return;
+        setLocationError(null);
+        setCoords({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      } catch (err) {
+        if (active) {
+          console.warn("Unable to resolve location for search", err);
+          setLocationError(
+            "We couldn't read your location right now. Try again later."
+          );
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+  const hasLocation = Boolean(coords);
   const goBackSafe = () => {
     if (router.canGoBack()) {
       router.back();
@@ -188,15 +185,52 @@ const SearchScreen = () => {
     });
   };
 
-  const filteredItems = useMemo(() => {
-    if (!query.trim()) return [];
-    const lower = query.toLowerCase();
-    return searchPool.filter((item) => {
-      const inName = item.name.toLowerCase().includes(lower);
-      const inTags = item.tags.some((t) => t.toLowerCase().includes(lower));
-      return inName || inTags;
-    });
-  }, [query]);
+  const displayCategories =
+    fetchedCategories.length > 0 ? fetchedCategories : staticCategories;
+
+  const popularCategories = useMemo(() => {
+    const popular = displayCategories.filter(
+      (cat) =>
+        (cat?.popular ?? cat?.isPopular ?? cat?.metadata?.popular ?? false) ===
+        true
+    );
+    if (popular.length > 0) {
+      return popular.slice(0, 8);
+    }
+    return displayCategories.slice(0, 8);
+  }, [displayCategories]);
+
+  useEffect(() => {
+    if (!token) {
+      setFetchedCategories([]);
+      return;
+    }
+
+    let isMounted = true;
+    const loadCategories = async () => {
+      setLoadingCategories(true);
+      setCategoryError(null);
+      try {
+        const response = await apiClient.get("/api/categoryItems");
+        if (!isMounted) return;
+        setFetchedCategories(normalizeCategoryPayload(response.data));
+      } catch (error) {
+        if (!isMounted) return;
+        console.warn("Unable to fetch categories", error);
+        setCategoryError("Unable to load categories right now.");
+      } finally {
+        if (isMounted) {
+          setLoadingCategories(false);
+        }
+      }
+    };
+
+    loadCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [token]);
 
   const handleResultPress = (name: string) => {
     setSelected(name);
@@ -248,10 +282,26 @@ const SearchScreen = () => {
         {query.trim() ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Results</Text>
-            {filteredItems.length === 0 ? (
+            {locationError ? (
+              <Text style={styles.categoryError}>{locationError}</Text>
+            ) : !hasLocation ? (
+              <Text style={styles.categoryMetaText}>
+                Acquiring your location...
+              </Text>
+            ) : null}
+            {searchError && (
+              <Text style={styles.categoryError}>{searchError}</Text>
+            )}
+            {loading && (
+              <Text style={styles.categoryMetaText}>Searching...</Text>
+            )}
+            {!loading && hasLocation && results.length === 0 && !searchError && (
               <Text style={styles.emptyText}>No matches found</Text>
-            ) : (
-              filteredItems.map((item) => (
+            )}
+            {!loading &&
+              hasLocation &&
+              !searchError &&
+              results.map((item) => (
                 <TouchableOpacity
                   key={item.id}
                   style={[
@@ -260,28 +310,50 @@ const SearchScreen = () => {
                   ]}
                   onPress={() => handleResultPress(item.name)}
                 >
-                  <View style={styles.resultIconWrap}>
+                  {item.image ? (
+                    <Image
+                      source={{ uri: item.image }}
+                      style={styles.resultThumb}
+                    />
+                  ) : (
+                    <View style={styles.resultIconWrap}>
+                      <Ionicons
+                        name="fast-food-outline"
+                        size={20}
+                        color="#FF7A00"
+                      />
+                    </View>
+                  )}
+                  <View style={styles.resultContent}>
+                    <Text style={styles.resultName}>{item.name}</Text>
+                    {item.description ? (
+                      <Text
+                        style={styles.resultDescription}
+                        numberOfLines={2}
+                      >
+                        {item.description}
+                      </Text>
+                    ) : null}
+                    <View style={styles.resultTagRow}>
+                      <Text style={styles.resultTagText}>
+                        {item.categoryName ?? "Category"}
+                      </Text>
+                      <Text style={styles.resultTagText}>
+                        {item.restaurantName ?? "Restaurant"}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.resultPriceWrap}>
+                    <Text style={styles.resultPrice}>{item.meta}</Text>
                     <Ionicons
-                      name={item.type === "Shop" ? "business-outline" : "fast-food-outline"}
-                      size={20}
-                      color="#FF7A00"
+                      name="chevron-forward"
+                      size={18}
+                      color="#999"
+                      style={{ marginTop: 6 }}
                     />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.resultName}>{item.name}</Text>
-                    <Text style={styles.resultMeta}>
-                      {item.type} • {item.tags.join(", ")}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color="#999"
-                    style={{ marginLeft: 6 }}
-                  />
                 </TouchableOpacity>
-              ))
-            )}
+              ))}
           </View>
         ) : (
           <>
@@ -308,26 +380,40 @@ const SearchScreen = () => {
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Popular Categories</Text>
+              {loadingCategories && (
+                <Text style={styles.categoryMetaText}>Loading...</Text>
+              )}
+              {categoryError && (
+                <Text style={styles.categoryError}>{categoryError}</Text>
+              )}
               <FlatList
-                data={categories}
-                numColumns={4}
-                keyExtractor={(item) => item.id}
-                scrollEnabled={false}
-                columnWrapperStyle={{ justifyContent: "space-between" }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.categoryCard}
-                    onPress={() => {
-                      setQuery(item.name);
-                      setSelected(item.name);
-                      goToResults(item.name);
-                    }}
-                  >
-                    <Image source={{ uri: item.image }} style={styles.categoryImage} />
-                    <Text style={styles.categoryText}>{item.name}</Text>
-                  </TouchableOpacity>
-                )}
-              />
+              data={popularCategories}
+              numColumns={4}
+              keyExtractor={(item) =>
+                String(item.id ?? item._id ?? resolveCategoryName(item))
+              }
+              scrollEnabled={false}
+              columnWrapperStyle={{ justifyContent: "space-between" }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.categoryCard}
+                  onPress={() => {
+                    const categoryName = resolveCategoryName(item);
+                    setQuery(categoryName);
+                    setSelected(categoryName);
+                    goToResults(categoryName);
+                  }}
+                >
+                  <Image
+                    source={{ uri: resolveCategoryImage(item) }}
+                    style={styles.categoryImage}
+                  />
+                  <Text style={styles.categoryText}>
+                    {resolveCategoryName(item)}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
             </View>
           </>
         )}
@@ -388,6 +474,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: "#111",
   },
+  categoryMetaText: {
+    fontSize: 12,
+    color: "#555",
+    marginBottom: 6,
+  },
+  categoryError: {
+    fontSize: 12,
+    color: "#d32f2f",
+    marginBottom: 6,
+  },
   chipWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -435,6 +531,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#eee",
   },
+  resultThumb: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    marginRight: 10,
+    backgroundColor: "#fff",
+  },
+  resultContent: {
+    flex: 1,
+  },
+  resultDescription: {
+    fontSize: 12,
+    color: "#555",
+    marginTop: 4,
+  },
+  resultTagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 6,
+  },
+  resultTagText: {
+    fontSize: 11,
+    color: "#777",
+    backgroundColor: "#f4f4f4",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginRight: 6,
+    marginBottom: 4,
+  },
   resultCardSelected: {
     borderColor: "#FF7A00",
     backgroundColor: "#fff7f1",
@@ -447,6 +573,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
+  },
+  resultPriceWrap: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    marginLeft: 10,
+  },
+  resultPrice: {
+    fontWeight: "700",
+    fontSize: 14,
+    color: "#111",
   },
   resultName: {
     fontSize: 15,
