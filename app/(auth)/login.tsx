@@ -11,8 +11,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import authService from "../../api/authService";
 import { Colors } from "../../constants/theme";
+import { TRAIN_DETAILS_KEY, TRAIN_DETAILS_TTL_MS } from "../../constants/train";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 
 const LoginScreen = () => {
@@ -59,11 +61,31 @@ const LoginScreen = () => {
     return isValid;
   };
 
+  const ensureTrainDetailsMissing = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+      if (!raw) return true;
+
+      const parsed = JSON.parse(raw);
+      return !(
+        parsed?.savedAt && Date.now() - parsed.savedAt < TRAIN_DETAILS_TTL_MS
+      );
+    } catch {
+      return true;
+    }
+  };
+
   const handleLogin = async () => {
     if (!validate()) return;
 
     try {
       await dispatch(authService.login({ email, password }));
+      await AsyncStorage.setItem("userEmail", email);
+      const needsDetails = await ensureTrainDetailsMissing();
+      if (needsDetails) {
+        router.replace("/form/train-details");
+        return;
+      }
       router.replace("/(user)");
     } catch {
       // error message is managed by Redux state, so nothing more is required here

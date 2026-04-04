@@ -7,9 +7,7 @@ import { ActivityIndicator, useColorScheme, View } from 'react-native';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { authSuccess } from '../redux/slices/authSlice';
 import { store } from '../redux/store';
-
-const TRAIN_DETAILS_KEY = 'trainDetails';
-const TRAIN_DETAILS_TTL_MS = 24 * 60 * 60 * 1000;
+import { TRAIN_DETAILS_KEY, TRAIN_DETAILS_TTL_MS } from '../constants/train';
 
 function RootLayoutNav() {
   const { token, role } = useSelector((state: any) => state.auth);
@@ -90,12 +88,10 @@ function RootLayoutNav() {
         return;
       }
 
-      if (effectiveRole === 'User' && !inUserGroup && !inFormGroup) {
+      if (effectiveRole === 'User' && !inFormGroup) {
         const hasDetails = await hasValidTrainDetails();
         if (!hasDetails) {
           router.replace('/form/train-details' as any);
-        } else {
-          router.replace('/(user)' as any);
         }
       }
     };

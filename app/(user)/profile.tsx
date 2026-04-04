@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { useDispatch, useSelector } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import authService from '../../api/authService';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Colors } from '../../constants/theme';
+import { TRAIN_DETAILS_KEY } from '../../constants/train';
+import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 
 interface TrainDetails {
   trainNumber?: string;
@@ -15,20 +16,25 @@ interface TrainDetails {
 
 export default function Profile() {
   const router = useRouter();
-  const dispatch = useDispatch();
-  const { userInfo, role } = useSelector((state: any) => state.auth);
+  const dispatch = useAppDispatch();
+  const { userInfo, role } = useAppSelector((state) => state.auth);
   const [trainDetails, setTrainDetails] = useState<TrainDetails | null>(null);
+  const [fallbackEmail, setFallbackEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadTrainDetails = async () => {
-      const raw = await AsyncStorage.getItem('trainDetails');
+      const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
       if (raw) {
         try {
           setTrainDetails(JSON.parse(raw));
         } catch (e) {
           console.warn('Failed to parse train info', e);
         }
+      }
+      const savedEmail = await AsyncStorage.getItem("userEmail");
+      if (savedEmail) {
+        setFallbackEmail(savedEmail);
       }
       setLoading(false);
     };
@@ -40,34 +46,34 @@ export default function Profile() {
     router.replace('/(auth)/login');
   };
 
-  const fullName =
-    userInfo?.fullName ?? userInfo?.name ?? userInfo?.firstName ?? 'Traveler';
-  const email = userInfo?.email ?? userInfo?.username ?? 'Not provided';
+  
+  // const email =
+  //   userInfo?.email ?? userInfo?.username ?? fallbackEmail ?? 'Not provided';
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.badge}>
           <Text style={styles.title}>My Profile</Text>
-          <Text style={styles.subTitle}>Hi, {fullName}</Text>
+          <Text style={styles.subTitle}>Hi, There...!</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Account</Text>
           <View style={styles.row}>
             <Text style={styles.label}>Email</Text>
-            <Text style={styles.value}>{email}</Text>
+            {/* <Text style={styles.value}>{email}</Text> */}
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Role</Text>
             <Text style={styles.value}>{role ?? 'Traveler'}</Text>
           </View>
-          {userInfo?.phoneNumber && (
+          {/* {userInfo?.phoneNumber && (
             <View style={styles.row}>
               <Text style={styles.label}>Phone</Text>
               <Text style={styles.value}>{userInfo.phoneNumber}</Text>
             </View>
-          )}
+          )} */}
         </View>
 
         <View style={styles.card}>

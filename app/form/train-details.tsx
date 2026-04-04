@@ -16,9 +16,7 @@ import {
   View,
 } from "react-native";
 import { Colors } from "../../constants/theme";
-
-const TRAIN_DETAILS_KEY = "trainDetails";
-const TRAIN_DETAILS_TTL_MS = 24 * 60 * 60 * 1000;
+import { TRAIN_DETAILS_KEY, TRAIN_DETAILS_TTL_MS } from "../../constants/train";
 
 export default function TrainDetailsScreen() {
   const router = useRouter();
