@@ -106,7 +106,7 @@ const SearchResultsScreen = () => {
       id: item.id,
       name: item.name,
       price,
-      image: item.image,
+      image: item.image?? "https://images.unsplash.com/photo-1528715471579-d1b1f5ca77b0?auto=format&fit=crop&w=120&q=80",
     });
     setToast(`${item.name} has been added to your cart.`);
     setTimeout(() => setToast(null), 1600);
@@ -176,7 +176,18 @@ const SearchResultsScreen = () => {
 
         {groupedRestaurants.map((restaurant) => (
           <View key={restaurant.restaurantId} style={styles.card}>
-            <View style={styles.cardHeader}>
+            <TouchableOpacity
+              style={styles.cardHeader}
+              onPress={() =>
+                router.push({
+                  pathname: "/(user)/restaurant-items",
+                  params: {
+                    restaurantId: restaurant.restaurantId,
+                    restaurantName: restaurant.restaurantName,
+                  },
+                })
+              }
+            >
               <Image
                 source={{
                   uri:
@@ -192,7 +203,7 @@ const SearchResultsScreen = () => {
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#999" />
-            </View>
+            </TouchableOpacity>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
