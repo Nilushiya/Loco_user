@@ -14,6 +14,11 @@ import { ENDPOINTS } from "../../constants/Config";
 import { MOCK_ORDERS, OrderRecord, OrderStatus } from "../../utils/orderMocks";
 
 const TAB_ITEMS: OrderStatus[] = ["Ongoing", "Completed", "Canceled"];
+const TAB_COLORS: Record<OrderStatus, string> = {
+  Ongoing: "#fdeed2",
+  Completed: "#e6f9ef",
+  Canceled: "#ffecef",
+};
 
 const STATUS_MAP: Record<string, OrderStatus> = {
   PENDING: "Ongoing",
@@ -44,8 +49,17 @@ const normalizeOrder = (raw: any): OrderRecord => ({
   date: raw.orderedAt ?? raw.createdAt ?? new Date().toISOString(),
   userName: raw.userName ?? "",
   userPhone: raw.userPhone ?? "",
-  pickup: raw.pickup ?? `Train ${raw.trainId ?? ""}`,
-  dropoff: raw.dropoff ?? `Station ${raw.stationId ?? ""}`,
+  pickup:
+    raw.pickup ??
+    raw.restaurant?.name ??
+    raw.train?.name ??
+    raw.trainName ??
+    "Pickup",
+  dropoff:
+    raw.dropoff ??
+    raw.station?.name ??
+    raw.stationName ??
+    "Dropoff",
   seatNumber: raw.seatNumber,
   restaurantName: raw.restaurant?.name,
   stationName: raw.station?.name,
@@ -53,6 +67,12 @@ const normalizeOrder = (raw: any): OrderRecord => ({
   items: raw.items ?? [],
   paymentMethod: raw.paymentMethod ?? "Cash on Delivery",
 });
+
+const STATUS_COLORS: Record<OrderStatus, { background: string; text: string }> = {
+  Ongoing: { background: "#fdeed2", text: "#a35a00" },
+  Completed: { background: "#e6f9ef", text: "#0e6a3d" },
+  Canceled: { background: "#ffecef", text: "#9d1c1c" },
+};
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -72,6 +92,7 @@ const OrderCard: React.FC<{
   order: OrderRecord;
   onDetails: () => void;
 }> = ({ order, onDetails }) => {
+  const badgeColor = STATUS_COLORS[order.status];
   return (
     <View style={styles.orderCard}>
       <View style={styles.cardHeader}>
@@ -85,12 +106,24 @@ const OrderCard: React.FC<{
       </View>
 
       <View style={styles.statusRow}>
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusBadgeText}>{order.status}</Text>
+        <View
+          style={[
+            styles.statusBadge,
+            { backgroundColor: badgeColor?.background ?? "#f3f3f3" },
+          ]}
+        >
+          <Text
+            style={[
+              styles.statusBadgeText,
+              { color: badgeColor?.text ?? "#111" },
+            ]}
+          >
+            {order.status}
+          </Text>
         </View>
-        <TouchableOpacity style={styles.rateButton}>
+        {/* <TouchableOpacity style={styles.rateButton}>
           <Text style={styles.rateButtonText}>Rate & Tip</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </View>
 
       <View style={styles.timelineRow}>
@@ -171,17 +204,22 @@ export default function OrderHistoryScreen() {
         {TAB_ITEMS.map((tab) => (
           <TouchableOpacity
             key={tab}
-            style={[
-              styles.tabButton,
-              activeTab === tab && styles.tabButtonActive,
-            ]}
+          style={[
+            styles.tabButton,
+            {
+              backgroundColor:
+                activeTab === tab ? TAB_COLORS[tab] : "transparent",
+            },
+            activeTab === tab && styles.tabButtonActive,
+          ]}
             onPress={() => setActiveTab(tab)}
           >
             <Text
-              style={[
-                styles.tabText,
-                activeTab === tab && styles.tabTextActive,
-              ]}
+            style={[
+              styles.tabText,
+              activeTab === tab && styles.tabTextActive,
+              activeTab === tab && { color: "#111" },
+            ]}
             >
               {tab}
             </Text>
@@ -244,6 +282,7 @@ const styles = StyleSheet.create({
   tabButton: {
     paddingVertical: 6,
     paddingHorizontal: 18,
+    borderRadius: 20,
   },
   tabButtonActive: {
     borderBottomWidth: 3,

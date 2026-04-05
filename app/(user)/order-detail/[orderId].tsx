@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -15,17 +15,35 @@ import apiClient from "../../../api/client";
 import { ENDPOINTS } from "../../../constants/Config";
 import { MOCK_ORDERS } from "../../../utils/orderMocks";
 
-const formatDate = (value: string) =>
-  new Date(value)?.toLocaleDateString("en-LK", {
+const formatDate = (value?: string) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-LK", {
     year: "numeric",
     month: "long",
     day: "numeric",
   });
-const formatTime = (value: string) =>
-  new Date(value)?.toLocaleTimeString("en-LK", {
+};
+const formatTime = (value?: string) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-LK", {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const formatStatusLabel = (status?: string) => {
+  if (!status) return "Pending";
+  return status
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
 
 const OrderStatusRow = ({ label, value }: { label: string; value: string }) => (
   <View style={styles.detailRow}>
@@ -37,16 +55,10 @@ const OrderStatusRow = ({ label, value }: { label: string; value: string }) => (
 export default function OrderDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ orderId?: string }>();
-
   const [apiOrder, setApiOrder] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const { userId } = useAppSelector((state) => state.auth);
-
-  // const order = useMemo(
-  //   () => MOCK_ORDERS.find((o) => o.id === params.orderId),
-  //   [params.orderId],
-  // );
 
   useEffect(() => {
     const load = async () => {
@@ -71,7 +83,15 @@ export default function OrderDetailScreen() {
     load();
   }, [userId, params.orderId]);
 
-  const source = apiOrder;
+  const source = apiOrder ?? MOCK_ORDERS.find((o) => o.id === params.orderId) ?? null;
+
+  if (loading && !source) {
+    return (
+      <View style={styles.emptyScreen}>
+        <ActivityIndicator size="large" color="#FF7A00" />
+      </View>
+    );
+  }
 
   if (!source) {
     return (
@@ -84,161 +104,173 @@ export default function OrderDetailScreen() {
     );
   }
 
-  if (loading && !source) {
-    return (
-      <View style={styles.emptyScreen}>
-        <ActivityIndicator size="large" color="#FF7A00" />
-      </View>
-    );
-  }
+  const people = [
+    {
+      label: "Restaurant",
+      name: source.restaurant?.name ?? source.restaurantName ?? "N/A",
+      phone: source.restaurant?.phoneNumber ?? "-",
+    },
+    {
+      label: "User",
+      name: `${source.user?.firstname ?? ""} ${source.user?.lastname ?? ""}`.trim() || "Guest",
+      phone: source.user?.phoneNumber ?? "-",
+    },
+    {
+      label: "Pickup",
+      name: source.pickupPerson?.name ?? "N/A",
+      phone: source.pickupPerson?.phoneNumber ?? "-",
+    },
+    {
+      label: "Delivery",
+      name: source.deliveryPerson?.name ?? "N/A",
+      phone: source.deliveryPerson?.phoneNumber ?? "-",
+    },
+  ];
+
+  const items = source.items ?? [];
+  const subtotal = items.reduce((sum, item) => {
+    const price = item.price ?? item.item?.price ?? 0;
+    const quantity = item.quantity ?? 1;
+    return sum + price * quantity;
+  }, 0);
+  const deliveryFee = source.deliveryFee ?? 250;
+  const totalAmount = source.total ?? subtotal + deliveryFee;
+  const paymentMethod = source.paymentMethod ?? "Cash on Delivery";
+  const orderTimestamp =
+    source.orderedAt ?? source.acceptedAt ?? source.createdAt ?? source.updatedAt ?? "";
+  const restaurantLabel = source.restaurant?.name ?? source.restaurantName ?? "Restaurant";
+  const userLabel =
+    `${source.user?.firstname ?? ""} ${source.user?.lastname ?? ""}`.trim() || "Guest";
+  const trainLabel = source.train?.name ?? source.trainName ?? "";
+  const stationLabel = source.station?.name ?? source.stationName ?? "Station";
+  const seatLabel = source.seatNumber ? `Seat ${source.seatNumber}` : "";
+  const statusLabel = formatStatusLabel(source.status);
+  const statusVariant = (source.status ?? "PENDING").toUpperCase();
+  const statusBackgroundColor = ["ACCEPTED", "DELIVERED"].includes(statusVariant)
+    ? "#E6F9EF"
+    : ["CANCELLED", "REJECTED"].includes(statusVariant)
+    ? "#FFE5E5"
+    : "#FFF4E5";
+  const statusTextColor = ["ACCEPTED", "DELIVERED"].includes(statusVariant)
+    ? "#0E6A3D"
+    : ["CANCELLED", "REJECTED"].includes(statusVariant)
+    ? "#9D1C1C"
+    : "#A35A00";
+  const orderDetails = [
+    { label: "Restaurant", value: restaurantLabel },
+    { label: "User", value: userLabel },
+    { label: "Train", value: trainLabel || "N/A" },
+    { label: "Station", value: stationLabel },
+    { label: "Seat", value: seatLabel || "Not set" },
+    {
+      label: "Ordered at",
+      value: orderTimestamp
+        ? `${formatDate(orderTimestamp)} · ${formatTime(orderTimestamp)}`
+        : "-",
+    },
+  ];
 
   return (
     <SafeAreaView style={styles.page}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#111" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Order ID - {source.id}</Text>
-      </View>
-      <Text style={styles.subHeader}>
-        {source.user?.firstname} {source.user?.lastname} {source.user?.phoneNumber}
-      </Text>
-
-      <View style={styles.timelineRow}>
-              <View style={styles.timelineIndicator}>
-                <View style={[styles.timelineDot, styles.timelineDotPrimary]} />
-                <View style={styles.timelineLine} />
-                <View style={[styles.timelineDot, styles.timelineDotSecondary]} />
-              </View>
-              <View style={styles.timelineText}>
-                <Text style={styles.timelineTitle}>{source.pickup}</Text>
-                <Text style={styles.timelineCaption}>
-                  {formatDate(source.date)} {formatTime(source.date)}
-                </Text>
-                <Text style={[styles.timelineTitle, { marginTop: 12 }]}>{source.dropoff}</Text>
-                <Text style={styles.timelineCaption}>
-                  {formatDate(source.date)} {formatTime(source.date)}
-                </Text>
-                {source.trainName || source.stationName || source.seatNumber ? (
-                  <Text style={styles.timelineCaption}>
-                    {source.trainName ? `Train ${source.trainName}` : ""}
-                    {source.stationName ? ` · Station ${source.stationName}` : ""}
-                    {source.seatNumber ? ` · Seat ${source.seatNumber}` : ""}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-      <View style={styles.timelineSection}>
-        <OrderStatusRow label="Pickup" value={source.pickup} />
-        <Text style={styles.timelineCaption}>
-          {formatTime(source.date)} - {formatDate(source.date)}
+      <ScrollView
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#111" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Order ID - {source.id}</Text>
+        </View>
+        <Text style={styles.subHeader}>
+          {userLabel} · {source.user?.phoneNumber ?? "-"}
         </Text>
-        <OrderStatusRow label="Dropoff" value={source.dropoff} />
-        <Text style={styles.timelineCaption}>
-          {formatTime(source.date)} - {formatDate(source.date)}
-        </Text>
-      </View>
-
-      <View style={styles.infoGrid}>
-        <OrderStatusRow
-          label="Restaurant"
-          value={source.restaurant?.name ?? source.restaurantName ?? "N/A"}
-        />
-        <OrderStatusRow
-          label="User"
-          value={`${source.user?.firstname ?? ""} ${source.user?.lastname ?? ""}`.trim() || "Guest"}
-        />
-        <OrderStatusRow
-          label="Train"
-          value={source.train?.name ?? source.trainName ?? "N/A"}
-        />
-        <OrderStatusRow
-          label="Station"
-          value={source.station?.name ?? source.stationName ?? "N/A"}
-        />
-        <OrderStatusRow label="Seat" value={source.seatNumber ?? "Not set"} />
-      </View>
-
-      <View style={styles.infoGrid}>
-        <OrderStatusRow
-          label="Train"
-          value={source.train?.name ?? source.trainName ?? "N/A"}
-        />
-        <OrderStatusRow
-          label="Station"
-          value={source.station?.name ?? source.stationName ?? "N/A"}
-        />
-        <OrderStatusRow
-          label="Restaurant"
-          value={source.restaurant?.name ?? source.restaurantName ?? "N/A"}
-        />
-        <OrderStatusRow label="Seat" value={source.seatNumber ?? "Not set"} />
-      </View>
-
-      <View style={styles.personSection}>
-        <Text style={styles.sectionTitleSmall}>People</Text>
-        {[{
-          label: "User",
-          person: {
-            name: source.userName,
-            phone: source.userPhone,
-          },
-        },
-        {
-          label: "Pickup",
-          person: source.pickupPerson,
-        },
-        {
-          label: "Delivery",
-          person: source.deliveryPerson,
-        }].map((item) => (
-          <View key={item.label} style={styles.personRow}>
-            <Text style={styles.personLabel}>{item.label}</Text>
-            <Text style={styles.personValue}>
-              {item.person?.name ?? "-"} · {item.person?.phoneNumber ?? "-"}
+        <View style={styles.statusRow}>
+          <Text style={styles.statusLabel}>Status</Text>
+          <View style={[styles.statusBadge, { backgroundColor: statusBackgroundColor }]}>
+            <Text style={[styles.statusBadgeText, { color: statusTextColor }]}>
+              {statusLabel}
             </Text>
           </View>
-        ))}
-      </View>
-
-      <View style={styles.tabRow}>
-        <TouchableOpacity style={[styles.tabPill, styles.tabActive]}>
-          <Text style={[styles.tabText, styles.tabTextActive]}>Receipt</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabPill}>
-          <Text style={styles.tabText}>Help</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+        </View>
+        <View style={styles.timelineRow}>
+          <View style={styles.timelineIndicator}>
+            <View style={[styles.timelineDot, styles.timelineDotPrimary]} />
+            <View style={styles.timelineLine} />
+            <View style={[styles.timelineDot, styles.timelineDotSecondary]} />
+          </View>
+          <View style={styles.timelineText}>
+            <Text style={styles.timelineTitle}>{restaurantLabel}</Text>
+            {source.restaurant?.address ? (
+              <Text style={styles.timelineCaption}>{source.restaurant.address}</Text>
+            ) : null}
+            <Text style={[styles.timelineTitle, { marginTop: 12 }]}>{stationLabel}</Text>
+            {trainLabel ? (
+              <Text style={styles.timelineCaption}>{`Train ${trainLabel}`}</Text>
+            ) : null}
+            {seatLabel ? (
+              <Text style={styles.timelineCaption}>{seatLabel}</Text>
+            ) : null}
+            {orderTimestamp ? (
+              <Text style={styles.timelineCaption}>
+                {formatDate(orderTimestamp)} · {formatTime(orderTimestamp)}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.infoGrid}>
+          {orderDetails.map((row) => (
+            <OrderStatusRow key={row.label} label={row.label} value={row.value} />
+          ))}
+        </View>
+        <View style={styles.personSection}>
+          <Text style={styles.sectionTitleSmall}>People</Text>
+          {people.map((item) => (
+            <View key={item.label} style={styles.personRow}>
+              <Text style={styles.personLabel}>{item.label}</Text>
+              <Text style={styles.personValue}>
+                {item.name} · {item.phone}
+              </Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.tabRow}>
+          <TouchableOpacity style={[styles.tabPill, styles.tabActive]}>
+            <Text style={[styles.tabText, styles.tabTextActive]}>Receipt</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tabPill}>
+            <Text style={styles.tabText}>Help</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.sectionTitle}>Order details</Text>
-        {(source.items ?? []).map((item: any) => {
-          const name = item.item?.name ?? item.name ?? "";
+        {items.map((item: any) => {
+          const name = item.item?.name ?? item.name ?? "Item";
           const price = item.price ?? item.item?.price ?? 0;
           const quantity = item.quantity ?? 1;
           return (
-            <View key={`${name}-${price}`} style={styles.detailRow}>
-              <Text style={styles.detailLabel}>
-                {name} x{quantity}
-              </Text>
-              <Text style={styles.detailValue}>LKR {price.toFixed(2)}</Text>
+            <View key={`${item.id ?? name}-${price}`} style={styles.detailRow}>
+              <View>
+                <Text style={styles.detailLabel}>
+                  {name} x{quantity}
+                </Text>
+                <Text style={styles.detailCaption}>Unit {formatLKR(price)}</Text>
+              </View>
+              <Text style={styles.detailValue}>{formatLKR(price * quantity)}</Text>
             </View>
           );
         })}
         <View style={styles.divider} />
-        <OrderStatusRow label="Sub Total" value={"+ " + formatLKR(source.subtotal)} />
-        <OrderStatusRow label="Delivery Fee" value={"+ " + formatLKR(source.deliveryFee)} />
+        <OrderStatusRow label="Sub Total" value={formatLKR(subtotal)} />
+        <OrderStatusRow label="Delivery Fee" value={formatLKR(deliveryFee)} />
         <View style={styles.divider} />
-        <OrderStatusRow label="Paid by" value={source.paymentMethod} />
-        <OrderStatusRow label="Total" value={formatLKR(source.amount)} />
-
+        <OrderStatusRow label="Paid by" value={paymentMethod} />
+        <OrderStatusRow label="Total" value={formatLKR(totalAmount)} />
         <View style={styles.tipRow}>
           <Text style={styles.tipTitle}>Driver tip</Text>
           <TouchableOpacity style={styles.tipButton}>
             <Text style={styles.tipButtonText}>Tip Driver</Text>
           </TouchableOpacity>
         </View>
-
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.actionBtn}>
             <Ionicons name="mail-outline" size={20} color="#111" />
@@ -254,8 +286,8 @@ export default function OrderDetailScreen() {
   );
 }
 
-const formatLKR = (value: number) =>
-  `LKR ${value?.toLocaleString("en-LK", {
+const formatLKR = (value?: number) =>
+  `LKR ${Number(value ?? 0).toLocaleString("en-LK", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -264,7 +296,10 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  contentContainer: {
     padding: 16,
+    paddingBottom: 40,
   },
   header: {
     flexDirection: "row",
@@ -281,76 +316,31 @@ const styles = StyleSheet.create({
     color: "#777",
     marginVertical: 8,
   },
-  overviewCard: {
+  statusRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  overviewLeft: {},
-  overviewType: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#111",
+  statusLabel: {
+    fontWeight: "600",
+    color: "#555",
   },
-  driverCard: {
-    backgroundColor: "#f3f3f3",
-    borderRadius: 12,
+  statusBadge: {
+    borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: "flex-end",
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "#eee",
   },
-  driverName: {
+  statusBadgeText: {
+    fontSize: 12,
     fontWeight: "700",
-  },
-  driverVehicle: {
-    fontSize: 12,
-    color: "#777",
-  },
-  driverRating: {
-    fontSize: 12,
-    color: "#000",
-    marginTop: 4,
-  },
-  driverCompany: {
-    fontSize: 12,
-    color: "#777",
-  },
-  timelineSection: {
-    marginBottom: 24,
-  },
-  
-  tabRow: {
-    flexDirection: "row",
-    marginBottom: 16,
-  },
-  tabPill: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  tabActive: {
-    borderBottomColor: "#ffb400",
-  },
-  tabText: {
-    fontSize: 14,
-    color: "#777",
-  },
-  tabTextActive: {
-    color: "#111",
-    fontWeight: "700",
-  },
-  contentContainer: {
-    paddingBottom: 40,
   },
   timelineRow: {
     flexDirection: "row",
-    marginTop: 16,
+    marginTop: 12,
+    marginBottom: 12,
   },
   timelineIndicator: {
     width: 32,
@@ -401,6 +391,11 @@ const styles = StyleSheet.create({
     color: "#555",
     fontSize: 14,
   },
+  detailCaption: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 2,
+  },
   detailValue: {
     fontSize: 14,
     fontWeight: "700",
@@ -410,6 +405,54 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "#eee",
     marginVertical: 12,
+  },
+  tabRow: {
+    flexDirection: "row",
+    marginBottom: 16,
+  },
+  tabPill: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  tabActive: {
+    borderBottomColor: "#ffb400",
+  },
+  tabText: {
+    fontSize: 14,
+    color: "#777",
+  },
+  tabTextActive: {
+    color: "#111",
+    fontWeight: "700",
+  },
+  personSection: {
+    marginBottom: 18,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+  sectionTitleSmall: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  personRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  personLabel: {
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  personValue: {
+    fontSize: 13,
+    color: "#333",
   },
   tipRow: {
     flexDirection: "row",
@@ -460,32 +503,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     borderWidth: 1,
     borderColor: "#eee",
-  },
-  personSection: {
-    marginBottom: 18,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#eee",
-  },
-  sectionTitleSmall: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  personRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  personLabel: {
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  personValue: {
-    fontSize: 13,
-    color: "#333",
   },
   emptyScreen: {
     flex: 1,
