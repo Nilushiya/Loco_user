@@ -13,6 +13,10 @@ export type OrderRecord = {
   userPhone: string;
   pickup: string;
   dropoff: string;
+  seatNumber?: string;
+  restaurantName?: string;
+  stationName?: string;
+  trainName?: string;
   items: Array<{ name: string; quantity: number; price: number }>;
   paymentMethod: string;
   driver?: {

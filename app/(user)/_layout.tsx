@@ -111,7 +111,7 @@ export default function UserLayout() {
           options={{ href: null, headerShown: false }}
         />
         <Tabs.Screen
-          name="order-detail"
+          name="order-detail/[orderId]"
           options={{ href: null, headerShown: false }}
         />
       </Tabs>

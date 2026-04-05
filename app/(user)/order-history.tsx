@@ -1,15 +1,58 @@
-import { useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { useNavigation, useRouter } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useAppSelector } from "../../redux/hooks";
+import apiClient from "../../api/client";
+import { ENDPOINTS } from "../../constants/Config";
 import { MOCK_ORDERS, OrderRecord, OrderStatus } from "../../utils/orderMocks";
 
 const TAB_ITEMS: OrderStatus[] = ["Ongoing", "Completed", "Canceled"];
+
+const STATUS_MAP: Record<string, OrderStatus> = {
+  PENDING: "Ongoing",
+  ACCEPTED: "Ongoing",
+  READY: "Ongoing",
+  PICKEDUP: "Ongoing",
+  HANDEDOVER: "Ongoing",
+  OUTFORDELIVERY: "Ongoing",
+  DELIVERED: "Completed",
+  CANCELLED: "Canceled",
+  REJECTED: "Canceled",
+};
+
+const mapOrderStatus = (value?: string): OrderStatus => {
+  if (!value) return "Ongoing";
+  const key = value.replace(/\s+/g, "").toUpperCase();
+  return STATUS_MAP[key] ?? "Ongoing";
+};
+
+const normalizeOrder = (raw: any): OrderRecord => ({
+  id: String(raw.id),
+  tripId: raw.tripId ? String(raw.tripId) : `TRIP-${raw.id}`,
+  type: raw.type ?? "Food",
+  status: mapOrderStatus(raw.status),
+  amount: Number(raw.total ?? raw.amount ?? 0),
+  subtotal: Number(raw.subtotal ?? raw.total ?? 0),
+  deliveryFee: Number(raw.deliveryFee ?? 0),
+  date: raw.orderedAt ?? raw.createdAt ?? new Date().toISOString(),
+  userName: raw.userName ?? "",
+  userPhone: raw.userPhone ?? "",
+  pickup: raw.pickup ?? `Train ${raw.trainId ?? ""}`,
+  dropoff: raw.dropoff ?? `Station ${raw.stationId ?? ""}`,
+  seatNumber: raw.seatNumber,
+  restaurantName: raw.restaurant?.name,
+  stationName: raw.station?.name,
+  trainName: raw.train?.name,
+  items: raw.items ?? [],
+  paymentMethod: raw.paymentMethod ?? "Cash on Delivery",
+});
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -34,7 +77,9 @@ const OrderCard: React.FC<{
       <View style={styles.cardHeader}>
         <View>
           <Text style={styles.cardType}>{order.type}</Text>
-          <Text style={styles.cardSubTitle}>{formatDate(order.date)}</Text>
+          <Text style={styles.cardSubTitle}>
+            {order.restaurantName ?? order.pickup}
+          </Text>
         </View>
         <Text style={styles.cardAmount}>LKR {order.amount.toFixed(2)}</Text>
       </View>
@@ -63,6 +108,13 @@ const OrderCard: React.FC<{
           <Text style={styles.timelineCaption}>
             {formatDate(order.date)} {formatTime(order.date)}
           </Text>
+          {order.trainName || order.stationName || order.seatNumber ? (
+            <Text style={styles.timelineCaption}>
+              {order.trainName ? `Train ${order.trainName}` : ""}
+              {order.stationName ? ` · Station ${order.stationName}` : ""}
+              {order.seatNumber ? ` · Seat ${order.seatNumber}` : ""}
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -78,11 +130,35 @@ const OrderCard: React.FC<{
 
 export default function OrderHistoryScreen() {
   const [activeTab, setActiveTab] = useState<OrderStatus>("Ongoing");
+  const [fetchedOrders, setFetchedOrders] = useState<OrderRecord[]>(MOCK_ORDERS);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const router = useRouter();
+  const { userId } = useAppSelector((state) => state.auth);
+
+  useEffect(() => {
+    const loadOrders = async () => {
+      if (!userId) return;
+      setLoading(true);
+      setError("");
+      try {
+        const response = await apiClient.get(`${ENDPOINTS.ORDER_LIST}?userId=${userId}`);
+        const data = response.data?.data ?? [];
+        setFetchedOrders(data.map(normalizeOrder));
+      } catch (err) {
+        console.warn("Order history failed", err);
+        setError("Unable to load orders.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadOrders();
+  }, [userId]);
 
   const filteredOrders = useMemo(
-    () => MOCK_ORDERS.filter((order) => order.status === activeTab),
-    [activeTab],
+    () => fetchedOrders.filter((order) => order.status === activeTab),
+    [activeTab, fetchedOrders],
   );
 
   return (
@@ -114,12 +190,21 @@ export default function OrderHistoryScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.listContainer}>
-        {filteredOrders.length === 0 && (
+        {loading && (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color="#FF7A00" />
+          </View>
+        )}
+        {!loading && error ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>{error}</Text>
+          </View>
+        ) : null}
+        {!loading && filteredOrders.length === 0 && !error && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>No orders for {activeTab} yet.</Text>
           </View>
         )}
-
         {filteredOrders.map((order) => (
           <OrderCard
             key={order.id}

@@ -55,6 +55,7 @@ export const ENDPOINTS = {
   AUTH_REGISTER: "/user/register",
   ORDER_CREATE: "/order/create",
   ORDER_GET: "/order/user/get",
+  ORDER_LIST: "/order/user/get",
   ORDER_CANCEL: "/order/cancel",
 
   // future routes kept for reference
