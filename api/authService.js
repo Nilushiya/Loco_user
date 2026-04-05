@@ -1,5 +1,7 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { ENDPOINTS } from "../constants/Config";
+import { LATEST_ORDER_ID_KEY, USER_ID_KEY } from "../constants/train";
 import {
   authFailure,
   authSuccess,
@@ -7,8 +9,6 @@ import {
   startLoading,
 } from "../redux/slices/authSlice";
 import apiClient from "./client";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { LATEST_ORDER_ID_KEY, TRAIN_DETAILS_KEY, USER_ID_KEY } from "../constants/train";
 // import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BASE64_CHARS =
@@ -65,12 +65,24 @@ const decodeJwtPayload = (token) => {
 
 const extractToken = (value) => {
   if (!value) return null;
-  if (typeof value === "string") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.toLowerCase().startsWith("bearer ")) {
+      return trimmed.slice(7).trim();
+    }
+    return trimmed;
+  }
   if (typeof value === "object") {
     return (
       extractToken(value.token) ??
+      extractToken(value.jwt) ??
+      extractToken(value.idToken) ??
       extractToken(value.data) ??
+      extractToken(value.payload) ??
+      extractToken(value.result) ??
       extractToken(value.accessToken) ??
+      extractToken(value.access_token) ??
       extractToken(value.authToken)
     );
   }
@@ -81,7 +93,10 @@ const toObject = (value) => (value && typeof value === "object" ? value : null);
 
 const normalizeAuthResponse = (response) => {
   const rawPayload = response?.data;
-  const token = extractToken(rawPayload);
+  const headerToken = extractToken(
+    response?.headers?.authorization ?? response?.headers?.Authorization,
+  );
+  const token = extractToken(rawPayload) ?? headerToken;
   const decoded = token ? decodeJwtPayload(token) : null;
 
   const responsePayload =
@@ -110,9 +125,14 @@ const normalizeAuthResponse = (response) => {
   const finalPayload = mergedPayload ?? rawPayload ?? null;
   const resolvedId =
     finalPayload?.id ??
+    finalPayload?._id ??
     finalPayload?.userId ??
+    finalPayload?.user_id ??
+    finalPayload?.uid ??
     finalPayload?.data?.id ??
+    finalPayload?.data?._id ??
     finalPayload?.data?.userId ??
+    finalPayload?.data?.user_id ??
     null;
 
   return {
@@ -153,35 +173,35 @@ const clearSession = async () => {
 const authService = {
   login: (credentials) => async (dispatch) => {
     dispatch(startLoading());
-
     try {
       const response = await apiClient.post(ENDPOINTS.AUTH_LOGIN, credentials);
       const { token, role, userId, payload } = normalizeAuthResponse(response);
 
       if (!token) {
-        throw new Error("Missing auth token");
+        throw new Error("Login response did not include an auth token");
       }
-      console.log("Auth token:", payload);
       await saveSession(token, role, { id: userId, role, payload }, userId);
+
       dispatch(authSuccess({ token, role, userId, userInfo: payload }));
       return response.data;
     } catch (error) {
       const errorMsg =
-        error.response?.data?.message || "Login failed. Please try again.";
+        error.response?.data?.message ??
+        error.message ??
+        "Login failed. Please try again.";
       dispatch(authFailure(errorMsg));
       throw error;
     }
   },
 
-  register: (payload) => async (dispatch) => {
+  register: (payloads) => async (dispatch) => {
     dispatch(startLoading());
-
     try {
-      const response = await apiClient.post(ENDPOINTS.AUTH_REGISTER, payload);
+      const response = await apiClient.post(ENDPOINTS.AUTH_REGISTER, payloads);
       const { token, role, userId, payload } = normalizeAuthResponse(response);
 
       if (!token) {
-        throw new Error("Missing auth token");
+        throw new Error("Registration response did not include an auth token");
       }
 
       await saveSession(token, role, { id: userId, role, payload }, userId);
@@ -190,6 +210,7 @@ const authService = {
     } catch (error) {
       const errorMsg =
         error.response?.data?.message ||
+        error.message ||
         "Registration failed. Please try again.";
       dispatch(authFailure(errorMsg));
       throw error;

@@ -5,8 +5,8 @@ import { Platform } from "react-native";
  */
 
 // Load from .env
-const WEB_API_URL = "http://localhost:3001";
-const MOBILE_API_URL = "http://172.19.8.0:3001"; // for mobile devices
+const WEB_API_URL = process.env.EXPO_PUBLIC_WEB_API_URL;
+const MOBILE_API_URL = "http://192.168.8.197:3001";
 const PROD_API_URL = process.env.EXPO_PUBLIC_PROD_API_URL; // for production server
 const TRACKING_SOCKET_URL_VALUE = process.env.EXPO_PUBLIC_TRACKING_SOCKET_URL;
 const TRACKING_API_URL_VALUE =
@@ -25,7 +25,12 @@ const ENV = {
 // Validation Check (Critical for Professional Apps)
 // This prevents the app from running if the developer forgot to set up the .env
 if (!ENV.apiUrl) {
-  const errorMsg = `CONFIG ERROR: EXPO_PUBLIC_API_URL is not defined. 
+  const missingVar = __DEV__
+    ? Platform.OS === "web"
+      ? "EXPO_PUBLIC_WEB_API_URL"
+      : "EXPO_PUBLIC_MOBILE_API_URL"
+    : "EXPO_PUBLIC_PROD_API_URL";
+  const errorMsg = `CONFIG ERROR: ${missingVar} is not defined. 
   Check your .env.${__DEV__ ? "development" : "production"} file.`;
 
   if (__DEV__) {
@@ -46,7 +51,7 @@ if (!TRACKING_SOCKET_URL_VALUE || !TRACKING_API_URL_VALUE) {
 }
 
 // Centralized Export
-export const BASE_URL = ENV.apiUrl;
+export const BASE_URL = "http://192.168.8.197:3001";
 export const TRACKING_SOCKET_URL = TRACKING_SOCKET_URL_VALUE;
 export const TRACKING_API_URL = TRACKING_API_URL_VALUE;
 

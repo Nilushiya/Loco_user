@@ -8,6 +8,10 @@ const apiClient = axios.create({
   baseURL: BASE_URL,
 });
 
+if (__DEV__) {
+  console.log("[api] baseURL:", BASE_URL);
+}
+
 // Add a request interceptor
 apiClient.interceptors.request.use(
   (config) => {

@@ -5,9 +5,9 @@ node_modules/
 
 # Sensitive environment variables
 .env
-.env.development
-.env.production
-.env.local
+.env.*
+!.env.example
+!*.env.example
 
 # Expo
 .expo/
@@ -35,9 +35,6 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
-
-# local env files
-.env*.local
 
 # typescript
 *.tsbuildinfo
