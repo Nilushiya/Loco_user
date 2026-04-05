@@ -178,7 +178,19 @@ export default function CartScreen() {
       const response = await apiClient.post(ENDPOINTS.ORDER_CREATE, payload);
       console.log("Order creation response:", response.data);
       const createdOrder = response.data?.data ?? response.data ?? null;
-      const orderId = createdOrder?.id;
+      const orderId = createdOrder?.id ?? createdOrder?.orderId ?? null;
+      let fetchedOrderDetails = createdOrder;
+
+      if (orderId && userId) {
+        try {
+          const detailsRes = await apiClient.get(
+            `${ENDPOINTS.ORDER_GET}/${userId}/${orderId}`,
+          );
+          fetchedOrderDetails = detailsRes.data?.data ?? detailsRes.data ?? fetchedOrderDetails;
+        } catch (detailsError) {
+          console.warn("Failed to fetch order details:", detailsError);
+        }
+      }
 
       if (trainDetails) {
         const updated = { ...trainDetails, seatNumber: seatNumberInput.trim() };
@@ -189,18 +201,21 @@ export default function CartScreen() {
         await AsyncStorage.setItem(LATEST_ORDER_ID_KEY, orderId.toString());
       }
 
-      const orderData = {
+      const storedOrder = {
+        ...fetchedOrderDetails,
         originalCart: cart,
         storeName: cart?.storeName,
-        items: itemsArray,
+        items: fetchedOrderDetails?.items ?? itemsArray,
         subtotal,
         deliveryFee: DELIVERY_FEE,
         total,
         station: deliveryStation,
+        stationName: deliveryStation,
         seatNumber: seatNumberInput.trim(),
-        orderId,
+        orderId: orderId ?? fetchedOrderDetails?.id,
       };
-      await AsyncStorage.setItem("activeOrder", JSON.stringify(orderData));
+
+      await AsyncStorage.setItem("activeOrder", JSON.stringify(storedOrder));
       await clearAll();
       setShowConfirmModal(false);
       router.replace("/(user)/order-processing");
