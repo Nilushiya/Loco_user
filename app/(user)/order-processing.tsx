@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   SafeAreaView,
@@ -20,12 +20,19 @@ const PRIMARY = "#FF7A00";
 const PEACH = "#FEEDE6";
 const BG = "#f5f5f5";
 const GREEN = "#4CAF50";
+const DELIVERY_FEE_FIXED = 250;
 
 const formatLKR = (amount: number): string =>
   `LKR ${amount.toLocaleString("en-LK", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+
+const getItemPrice = (item: any): number =>
+  Number(item?.price ?? item?.item?.price ?? 0) || 0;
+
+const getItemQuantity = (item: any): number =>
+  Number(item?.quantity ?? 1) || 1;
 
 const formatDate = (value?: string | null) => {
   if (!value) return "Pending";
@@ -43,8 +50,35 @@ export default function OrderProcessingScreen() {
   const [errorMsg, setErrorMsg] = useState("");
   const { restoreCart } = useCart();
   const [currentStep, setCurrentStep] = useState(0);
-  const steps = ["Accepted", "Ready", "Picked-up", "Arrived Station", "Delivered"];
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
+  const orderDetailsRef = useRef(orderDetails);
+  const steps = [
+    "Processing",
+    "Vendor Response",
+    "Accepted",
+    "Ready",
+    "Picked-up",
+    "Arrived Station",
+    "Delivered",
+  ];
   const displayedOrder = apiOrder ?? orderDetails;
+  const isMountedRef = useRef(true);
+  const orderItems = Array.isArray(displayedOrder?.items) ? displayedOrder.items : [];
+  const computedSubtotal = orderItems.reduce(
+    (sum, item) => sum + getItemPrice(item) * getItemQuantity(item),
+    0,
+  );
+  const useComputedTotals = orderItems.length > 0;
+  const fallbackSubtotal = Number(displayedOrder?.subtotal ?? displayedOrder?.amount ?? 0) || 0;
+  const fallbackDeliveryFee = Number(displayedOrder?.deliveryFee ?? DELIVERY_FEE_FIXED) || DELIVERY_FEE_FIXED;
+  const fallbackTotal = Number(displayedOrder?.total ?? 0);
+  const subtotalValue = useComputedTotals ? computedSubtotal : fallbackSubtotal;
+  const deliveryFeeValue = useComputedTotals ? DELIVERY_FEE_FIXED : fallbackDeliveryFee;
+  const totalValue =
+    useComputedTotals || fallbackTotal <= 0
+      ? subtotalValue + deliveryFeeValue
+      : fallbackTotal;
 
   useEffect(() => {
     let isActive = true;
@@ -61,8 +95,9 @@ export default function OrderProcessingScreen() {
             const parsed = JSON.parse(activeOrderStr);
             if (isActive) {
               setOrderDetails(parsed);
-              if (parsed?.orderId) {
-                setOrderId(String(parsed.orderId));
+              const storedOrderIdValue = parsed?.orderId ?? parsed?.id;
+              if (storedOrderIdValue) {
+                setOrderId(String(storedOrderIdValue));
               }
             }
           } catch (parseError) {
@@ -77,12 +112,20 @@ export default function OrderProcessingScreen() {
           setOrderId(storedOrderId);
         }
 
+        if (isActive && storedUserId) {
+          const parsedUserId = Number(storedUserId);
+          if (!Number.isNaN(parsedUserId)) {
+            setUserId(parsedUserId);
+          }
+        }
+
         if (storedOrderId && storedUserId) {
           try {
             const response = await apiClient.get(
-              `${ENDPOINTS.ORDER_FETCH}/${storedUserId}/${storedOrderId}`,
+            `${ENDPOINTS.ORDER_GET}/${storedUserId}/${storedOrderId}`,
             );
             const fetched = response.data?.data ?? response.data ?? null;
+            console.log("Fetched Order", fetched);
             if (isActive && fetched) {
               setApiOrder(fetched);
               if (fetched?.id) setOrderId(String(fetched.id));
@@ -90,7 +133,7 @@ export default function OrderProcessingScreen() {
             }
           } catch (fetchError) {
             console.warn("Order fetch failed", fetchError);
-            if (isActive && !orderDetails) {
+            if (isActive && !orderDetailsRef.current) {
               setErrorMsg("Unable to load order details.");
             }
           }
@@ -119,7 +162,54 @@ export default function OrderProcessingScreen() {
       clearInterval(timer);
       isActive = false;
     };
+  }, []);
+
+  useEffect(() => {
+    orderDetailsRef.current = orderDetails;
   }, [orderDetails]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const attemptCancel = async () => {
+    if (!orderId) {
+      Alert.alert("Cancel Failed", "Order reference is missing. Please try again.");
+      return;
+    }
+
+    setIsCancelling(true);
+    try {
+      const candidateUserId =
+        displayedOrder?.userId ?? orderDetails?.userId ?? userId ?? 0;
+      const parsedUserId = Number(candidateUserId);
+      const payloadUserId = Number.isNaN(parsedUserId) ? 0 : parsedUserId;
+
+      await apiClient.put(`${ENDPOINTS.ORDER_CANCEL}/${orderId}`, {
+        userid: payloadUserId,
+      });
+
+      if (orderDetails?.originalCart) {
+        await restoreCart(orderDetails.originalCart);
+      }
+      await AsyncStorage.removeItem("activeOrder");
+      router.replace("/(user)/cart");
+    } catch (cancelError) {
+      console.warn("Order cancellation failed", cancelError);
+      if (isMountedRef.current) {
+        Alert.alert(
+          "Cancel Failed",
+          "We could not cancel your order right now. Please try again in a moment.",
+        );
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsCancelling(false);
+      }
+    }
+  };
 
   const handleCancel = () => {
     if (currentStep >= 1) {
@@ -127,19 +217,13 @@ export default function OrderProcessingScreen() {
       return;
     }
 
+    if (isCancelling) {
+      return;
+    }
+
     Alert.alert("Cancel Order", "Are you sure you want to cancel the order?", [
       { text: "No", style: "cancel" },
-      {
-        text: "Yes",
-        style: "destructive",
-        onPress: async () => {
-          if (orderDetails && orderDetails.originalCart) {
-            await restoreCart(orderDetails.originalCart);
-          }
-          await AsyncStorage.removeItem("activeOrder");
-          router.replace("/(user)/cart");
-        },
-      },
+      { text: "Yes", style: "destructive", onPress: attemptCancel },
     ]);
   };
 
@@ -171,13 +255,8 @@ export default function OrderProcessingScreen() {
     );
   }
 
-  const timelineEvents = [
-    { label: "Ordered", timestamp: displayedOrder.orderedAt },
-    { label: "Accepted", timestamp: displayedOrder.acceptedAt },
-    { label: "Ready", timestamp: displayedOrder.readyAt ?? displayedOrder.pickedupAt },
-    { label: "Out for delivery", timestamp: displayedOrder.outForDeliveryAt },
-    { label: "Delivered", timestamp: displayedOrder.deliveredAt },
-  ];
+  const currentStatusIndex = Math.min(currentStep, steps.length - 1);
+  const currentStatusLabel = displayedOrder?.status ?? steps[currentStatusIndex];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -192,8 +271,15 @@ export default function OrderProcessingScreen() {
         </TouchableOpacity>
         <Text style={styles.headerOrderId}>{orderId || "Order"}</Text>
         {currentStep < 1 && (
-          <TouchableOpacity onPress={handleCancel}>
-            <Text style={styles.headerCancelText}>Cancel</Text>
+          <TouchableOpacity onPress={handleCancel} disabled={isCancelling}>
+            <Text
+              style={[
+                styles.headerCancelText,
+                isCancelling && styles.headerCancelTextDisabled,
+              ]}
+            >
+              {isCancelling ? "Canceling..." : "Cancel"}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -263,21 +349,24 @@ export default function OrderProcessingScreen() {
             </TouchableOpacity>
           </View>
 
-          {displayedOrder.items &&
-            displayedOrder.items.map((item: any, idx: number) => {
-              const itemName = item.item?.name ?? item.name ?? "Menu Item";
-              const quantity = item.quantity ?? 1;
-              return (
-                <View key={`${itemName}-${idx}`} style={styles.itemRow}>
+          {orderItems.map((item: any, idx: number) => {
+            const itemName = item.item?.name ?? item.name ?? "Menu Item";
+            const quantity = getItemQuantity(item);
+            const itemPrice = getItemPrice(item);
+            return (
+              <View key={`${itemName}-${idx}`} style={styles.itemRow}>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.itemName} numberOfLines={2}>
                     {itemName}
                   </Text>
-                  <View style={styles.itemQtyBadge}>
-                    <Text style={styles.itemQtyText}>{quantity}</Text>
-                  </View>
+                  <Text style={styles.itemPriceText}>{formatLKR(itemPrice)}</Text>
                 </View>
-              );
-            })}
+                <View style={styles.itemQtyBadge}>
+                  <Text style={styles.itemQtyText}>{quantity}</Text>
+                </View>
+              </View>
+            );
+          })}
 
           <View style={styles.divider} />
 
@@ -296,32 +385,85 @@ export default function OrderProcessingScreen() {
 
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Sub Total</Text>
-            <Text style={styles.priceValue}>
-              {formatLKR(displayedOrder.subtotal ?? displayedOrder.amount ?? 0)}
-            </Text>
+            <Text style={styles.priceValue}>{formatLKR(subtotalValue)}</Text>
           </View>
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Delivery Fee</Text>
             <Text style={styles.priceValue}>
-              + {formatLKR(displayedOrder.deliveryFee ?? 0)}
+              + {formatLKR(deliveryFeeValue)}
             </Text>
           </View>
           <View style={[styles.priceRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>{formatLKR(displayedOrder.total ?? 0)}</Text>
+            <Text style={styles.totalValue}>{formatLKR(totalValue)}</Text>
           </View>
         </View>
 
-        <View style={styles.statusCard}>
-          <Text style={styles.sectionTitle}>Status Timeline</Text>
-          {timelineEvents.map((event) => (
-            <View key={event.label} style={styles.statusRow}>
-              <Text style={styles.statusLabel}>{event.label}</Text>
-              <Text style={styles.statusValue}>{formatDate(event.timestamp)}</Text>
-            </View>
-          ))}
+        <View style={styles.infoCard}>
+          <Text style={styles.sectionTitle}>Order Info</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Order ID</Text>
+            <Text style={styles.infoValue}>{displayedOrder?.id ?? orderId}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Status</Text>
+            <Text style={styles.infoValue}>{currentStatusLabel}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Ordered at</Text>
+            <Text style={styles.infoValue}>{formatDate(displayedOrder?.orderedAt)}</Text>
+          </View>
+          <View style={[styles.infoRow, styles.infoRowTotal]}>
+            <Text style={styles.infoLabel}>Total Paid</Text>
+            <Text style={styles.infoValue}>{formatLKR(displayedOrder.total ?? displayedOrder.amount ?? 0)}</Text>
+          </View>
         </View>
 
+        {currentStep < 1 && (
+          <View style={styles.infoActionRow}>
+            <TouchableOpacity
+              style={[
+                styles.cancelOrderBtn,
+                isCancelling && styles.cancelOrderBtnDisabled,
+              ]}
+              onPress={handleCancel}
+              disabled={isCancelling}
+            >
+              <Text style={styles.cancelOrderBtnText}>
+                {isCancelling ? "Canceling..." : "Cancel Order"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.statusSummaryCard}>
+          <Text style={styles.sectionTitle}>Order Status</Text>
+          <Text style={styles.statusSummaryCurrent}>{currentStatusLabel}</Text>
+          <View style={styles.statusPillRow}>
+            {steps.map((step, index) => {
+              const isActiveStep = index <= currentStatusIndex;
+              return (
+                <View
+                  key={step}
+                  style={[
+                    styles.statusPill,
+                    isActiveStep ? styles.statusPillActive : styles.statusPillInactive,
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.statusPillText,
+                      isActiveStep ? styles.statusPillTextActive : styles.statusPillTextInactive,
+                    ]}
+                  >
+                    {step}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
         <View style={styles.paymentCard}>
           <Ionicons name="cash-outline" size={24} color={GREEN} />
           <Text style={styles.paymentText}>Cash on Delivery</Text>
@@ -330,8 +472,17 @@ export default function OrderProcessingScreen() {
 
       {currentStep < 1 && (
         <View style={styles.bottomContainer}>
-          <TouchableOpacity style={styles.bottomCancelBtn} onPress={handleCancel}>
-            <Text style={styles.bottomCancelText}>Cancel Order</Text>
+          <TouchableOpacity
+            style={[
+              styles.bottomCancelBtn,
+              isCancelling && styles.bottomCancelBtnDisabled,
+            ]}
+            onPress={handleCancel}
+            disabled={isCancelling}
+          >
+            <Text style={styles.bottomCancelText}>
+              {isCancelling ? "Canceling..." : "Cancel Order"}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -435,6 +586,36 @@ const styles = StyleSheet.create({
     color: "#111",
     marginBottom: 20,
   },
+  infoCard: {
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 15,
+    elevation: 3,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#f5f5f5",
+  },
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  infoRowTotal: {
+    marginBottom: 0,
+  },
+  infoLabel: {
+    color: "#666",
+    fontSize: 13,
+  },
+  infoValue: {
+    color: "#111",
+    fontWeight: "700",
+  },
   deliveryRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -496,6 +677,30 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     fontWeight: "500",
   },
+  itemPriceText: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 2,
+  },
+  infoActionRow: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  cancelOrderBtn: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#e21313",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  cancelOrderBtnDisabled: {
+    opacity: 0.6,
+  },
+  cancelOrderBtnText: {
+    color: "#e21313",
+    fontWeight: "800",
+  },
   itemQtyBadge: {
     backgroundColor: "#f0f0f0",
     paddingHorizontal: 12,
@@ -548,7 +753,7 @@ const styles = StyleSheet.create({
     color: "#111",
     fontWeight: "700",
   },
-  statusCard: {
+  statusSummaryCard: {
     backgroundColor: "#fff",
     marginHorizontal: 16,
     borderRadius: 20,
@@ -562,18 +767,47 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#f5f5f5",
   },
-  statusRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  statusSummaryCurrent: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111",
     marginBottom: 12,
   },
-  statusLabel: {
-    color: "#444",
-    fontWeight: "600",
+  statusPillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
-  statusValue: {
-    color: "#888",
-    fontSize: 13,
+  statusPill: {
+    borderRadius: 50,
+    borderWidth: 1,
+    borderColor: "#eee",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 8,
+    backgroundColor: "#f0f0f0",
+  },
+  statusPillActive: {
+    backgroundColor: GREEN,
+    borderColor: GREEN,
+  },
+  statusPillInactive: {
+    backgroundColor: "#f5f5f5",
+    borderColor: "#eee",
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#444",
+  },
+  statusPillTextActive: {
+    color: "#fff",
+  },
+  statusPillTextInactive: {
+    color: "#444",
+  },
+  headerCancelTextDisabled: {
+    opacity: 0.6,
   },
   paymentCard: {
     flexDirection: "row",
@@ -612,9 +846,13 @@ const styles = StyleSheet.create({
     borderColor: "rgba(226, 19, 19, 0.4)",
     alignItems: "center",
   },
+  bottomCancelBtnDisabled: {
+    opacity: 0.6,
+  },
   bottomCancelText: {
     color: "#e21313",
     fontSize: 16,
     fontWeight: "800",
   },
 });
+

@@ -1,16 +1,18 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import { CartProvider } from '../../context/CartContext';
+import { Ionicons } from "@expo/vector-icons";
+import { Tabs } from "expo-router";
+import { CartProvider } from "../../context/CartContext";
 
 export default function UserLayout() {
   return (
     <CartProvider>
-      <Tabs backBehavior="history" screenOptions={{ tabBarActiveTintColor: "#FF7A00", }}
+      <Tabs
+        backBehavior="history"
+        screenOptions={{ tabBarActiveTintColor: "#FF7A00" }}
       >
         <Tabs.Screen
           name="index" // This is the Dashboard
           options={{
-            title: 'Dashboard',
+            title: "Dashboard",
             headerShown: false,
             tabBarStyle: {
               paddingTop: 5,
@@ -18,92 +20,99 @@ export default function UserLayout() {
             },
             tabBarLabel: () => null, // Hide the label
             tabBarInactiveTintColor: "black",
-            tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="home" size={24} color={color} />
+            ),
           }}
         />
         <Tabs.Screen
           name="notifications"
           options={{
-            title: 'Alerts',
+            title: "Alerts",
             headerShown: false,
             tabBarStyle: {
               paddingTop: 5,
-              backgroundColor: "#FEEDE6", // Tab bar background
+              backgroundColor: "#FEEDE6",
             },
-            tabBarLabel: () => null, // Hide the label
+            tabBarLabel: () => null,
             tabBarInactiveTintColor: "black",
-            tabBarIcon: ({ color }) => <Ionicons name="notifications" size={24} color={color} />,
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="notifications" size={24} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="order-history"
+          options={{
+            title: "Activities",
+            headerShown: false,
+            tabBarStyle: {
+              paddingTop: 5,
+              backgroundColor: "#FEEDE6",
+            },
+            tabBarLabel: () => null,
+            tabBarInactiveTintColor: "black",
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="list" size={24} color={color} />
+            ),
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
-            title: 'Profile',
+            title: "Profile",
             headerShown: false,
             tabBarStyle: {
               paddingTop: 5,
-              backgroundColor: "#FEEDE6", // Tab bar background
+              backgroundColor: "#FEEDE6",
             },
-            tabBarLabel: () => null, // Hide the label
+            tabBarLabel: () => null,
             tabBarInactiveTintColor: "black",
-            tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="person" size={24} color={color} />
+            ),
           }}
         />
         <Tabs.Screen
           name="search"
-          options={{
-            href: null, // hide from tab bar but keep route available
-            headerShown: false,
-          }}
+          options={{ href: null, headerShown: false }}
         />
         <Tabs.Screen
           name="search-results"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
+          options={{ href: null, headerShown: false }}
         />
         <Tabs.Screen
           name="store"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
+          options={{ href: null, headerShown: false }}
         />
-        <Tabs.Screen
-          name="cart"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
-        />
+        <Tabs.Screen name="cart" options={{ href: null, headerShown: false }} />
         <Tabs.Screen
           name="payment-options"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
+          options={{ href: null, headerShown: false }}
         />
         <Tabs.Screen
           name="card-details"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
+          options={{ href: null, headerShown: false }}
         />
         <Tabs.Screen
           name="order-placement"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
+          options={{ href: null, headerShown: false }}
         />
         <Tabs.Screen
           name="order-processing"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
+          options={{ href: null, headerShown: false }}
+        />
+        <Tabs.Screen
+          name="tracking"
+          options={{ href: null, headerShown: false }}
+        />
+        <Tabs.Screen
+          name="restaurant-items"
+          options={{ href: null, headerShown: false }}
+        />
+        <Tabs.Screen
+          name="order-detail/[orderId]"
+          options={{ href: null, headerShown: false }}
         />
       </Tabs>
     </CartProvider>

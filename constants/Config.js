@@ -6,7 +6,7 @@ import { Platform } from "react-native";
 
 // Load from .env
 const WEB_API_URL = "http://localhost:3001";
-const MOBILE_API_URL = "http://172.19.8.0:3001"; // for mobile devices
+const MOBILE_API_URL = "http://192.168.8.178:3001"; // for mobile devices
 const PROD_API_URL = process.env.EXPO_PUBLIC_PROD_API_URL; // for production server
 const TRACKING_SOCKET_URL_VALUE = process.env.EXPO_PUBLIC_TRACKING_SOCKET_URL;
 const TRACKING_API_URL_VALUE =
@@ -54,7 +54,9 @@ export const ENDPOINTS = {
   AUTH_LOGIN: "/user/login",
   AUTH_REGISTER: "/user/register",
   ORDER_CREATE: "/order/create",
-  ORDER_FETCH: "/order/user/get",
+  ORDER_GET: "/order/user/get",
+  ORDER_LIST: "/order/user/get",
+  ORDER_CANCEL: "/order/cancel",
 
   // future routes kept for reference
   // USER_PROFILE: '/user/profile',
