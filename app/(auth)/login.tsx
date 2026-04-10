@@ -1,10 +1,9 @@
 import { AntDesign, FontAwesome, MaterialIcons } from "@expo/vector-icons";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  Alert,
+  ActivityIndicator,
   Image,
   StyleSheet,
   Text,
@@ -12,46 +11,84 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import authService from "../../api/authService";
 import { Colors } from "../../constants/theme";
+import { TRAIN_DETAILS_KEY, TRAIN_DETAILS_TTL_MS } from "../../constants/train";
+import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 
-type LoginScreenProps = NativeStackScreenProps<any, "Login">;
-
-const LoginScreen = ({ navigation }: LoginScreenProps) => {
+const LoginScreen = () => {
   const router = useRouter();
+  const dispatch = useAppDispatch();
+  const { isLoading, error: authError } = useAppSelector((state) => state.auth);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>(
-    {},
-  );
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (errors.email) {
+      setErrors((prev) => ({ ...prev, email: undefined }));
+    }
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    if (errors.password) {
+      setErrors((prev) => ({ ...prev, password: undefined }));
+    }
+  };
 
   const validate = () => {
-    let newErrors: { email?: string; password?: string } = {};
+    const newErrors: { email?: string; password?: string } = {};
+    let isValid = true;
 
     if (!email) {
       newErrors.email = "Email is required";
+      isValid = false;
     } else if (!/^\S+@\S+\.\S+$/.test(email)) {
       newErrors.email = "Invalid email format";
+      isValid = false;
     }
 
     if (!password) {
       newErrors.password = "Password is required";
+      isValid = false;
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return isValid;
   };
+
+  const ensureTrainDetailsMissing = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+      if (!raw) return true;
+
+      const parsed = JSON.parse(raw);
+      return !(
+        parsed?.savedAt && Date.now() - parsed.savedAt < TRAIN_DETAILS_TTL_MS
+      );
+    } catch {
+      return true;
+    }
+  };
+
   const handleLogin = async () => {
     if (!validate()) return;
 
     try {
-      authService.login({ email, password });
-      Alert.alert("Success", "Login successful!");
-    } catch (error: any) {
-      Alert.alert(
-        "Login Failed",
-        error?.response?.data?.message || "Something went wrong",
-      );
+      await dispatch(authService.login({ email, password }));
+      await AsyncStorage.setItem("userEmail", email);
+      const needsDetails = await ensureTrainDetailsMissing();
+      if (needsDetails) {
+        router.replace("/form/train-details");
+        return;
+      }
+      router.replace("/(user)");
+    } catch {
+      // error message is managed by Redux state, so nothing more is required here
     }
   };
 
@@ -64,29 +101,48 @@ const LoginScreen = ({ navigation }: LoginScreenProps) => {
           resizeMode="contain"
         />
 
+        {authError && <Text style={styles.authError}>{authError}</Text>}
+
         <TextInput
           placeholder="Email"
+          placeholderTextColor="#999"
           style={styles.input}
           value={email}
-          onChangeText={setEmail}
+          onChangeText={handleEmailChange}
+          keyboardType="email-address"
+          autoCapitalize="none"
         />
         {errors.email && <Text style={styles.error}>{errors.email}</Text>}
 
         <TextInput
           placeholder="Password"
+          placeholderTextColor="#999"
           secureTextEntry
           style={styles.input}
           value={password}
-          onChangeText={setPassword}
+          onChangeText={handlePasswordChange}
         />
         {errors.password && <Text style={styles.error}>{errors.password}</Text>}
 
         <TouchableOpacity onPress={() => router.push("/#")}>
           <Text style={styles.forgotPassword}>Forgot Password?</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Eat Now!</Text>
+
+        <TouchableOpacity
+          style={[
+            styles.button,
+            isLoading ? styles.buttonDisabled : undefined,
+          ]}
+          onPress={handleLogin}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Sign In</Text>
+          )}
         </TouchableOpacity>
+
         <View style={styles.linewithtext}>
           <View style={styles.line} />
           <Text style={styles.text}>or</Text>
@@ -109,9 +165,17 @@ const LoginScreen = ({ navigation }: LoginScreenProps) => {
         </View>
       </View>
       <View style={styles.SignupBtn}>
-        <TouchableOpacity onPress={() => router.push("/signup")}>
-          <AntDesign name="up" size={15} color="white" style={styles.upArrow}/>
-          <Text style={[styles.signup, {color:"white"}]}>Sign Up</Text>
+        <TouchableOpacity
+          onPress={() => router.push("/signup")}
+          style={styles.signupTouch}
+        >
+          <AntDesign
+            name="up"
+            size={15}
+            color="white"
+            style={styles.upArrow}
+          />
+          <Text style={[styles.signup, { color: "white" }]}>Sign Up</Text>
         </TouchableOpacity>
       </View>
     </LinearGradient>
@@ -123,14 +187,15 @@ export default LoginScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.default.background,
-    justifyContent: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
+    backgroundColor: Colors.default.background,
   },
   gradient: {
     flex: 1,
   },
   card: {
+    flex: 1,
     padding: 25,
     borderRadius: 20,
   },
@@ -163,6 +228,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 15,
   },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
   buttonText: {
     color: "#fff",
     fontSize: 16,
@@ -180,17 +248,17 @@ const styles = StyleSheet.create({
     color: Colors.default.primary,
     fontWeight: "500",
   },
-  signup: {
-    textAlign: "center",
-    color: Colors.default.primary,
-    fontWeight: "500",
-    marginBottom: 7
-  },
   error: {
     color: "red",
     fontSize: 12,
-    marginTop: 5,
+    marginTop: -10,
     marginLeft: 10,
+  },
+  authError: {
+    color: "red",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 5,
   },
   linewithtext: {
     flexDirection: "row",
@@ -231,21 +299,30 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   SignupBtn: {
-    flex:1,
+    alignItems: "center",
+  },
+  signupTouch: {
+    width: "100%",
+    flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
-    width: "100%",
-    position: "fixed",
-    bottom: 0,
     backgroundColor: Colors.default.primary,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 30,
+    paddingTop: 10,
   },
   upArrow: {
     flex: 1,
     textAlign: "center",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 5
-  }
+    marginTop: 5,
+  },
+  signup: {
+    flex: 1,
+    textAlign: "center",
+    justifyContent: "center",
+    alignItems: "center",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
 });

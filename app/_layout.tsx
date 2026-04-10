@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { Provider, useDispatch, useSelector } from 'react-redux';
-import { store } from '../redux/store';
-import * as SecureStore from 'expo-secure-store';
-import { authSuccess, logout } from '../redux/slices/authSlice';
-import { ActivityIndicator, View } from 'react-native';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useColorScheme } from 'react-native';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, useColorScheme, View } from 'react-native';
+import { Provider, useDispatch, useSelector } from 'react-redux';
+import { authSuccess } from '../redux/slices/authSlice';
+import { store } from '../redux/store';
+import { TRAIN_DETAILS_KEY, TRAIN_DETAILS_TTL_MS } from '../constants/train';
 
 function RootLayoutNav() {
   const { token, role } = useSelector((state: any) => state.auth);
@@ -22,10 +23,21 @@ function RootLayoutNav() {
       try {
         const savedToken = await SecureStore.getItemAsync('userToken');
         const savedRole = await SecureStore.getItemAsync('userRole');
+        const savedUserInfo = await SecureStore.getItemAsync('userInfo');
+        const parsedUserInfo = savedUserInfo
+          ? JSON.parse(savedUserInfo)
+          : null;
 
         if (savedToken && savedRole) {
           // If found, hydrate Redux state
-          dispatch(authSuccess({ token: savedToken, role: savedRole }));
+          dispatch(
+            authSuccess({
+              token: savedToken,
+              role: savedRole,
+              userId: parsedUserInfo?.id ?? null,
+              userInfo: parsedUserInfo,
+            }),
+          );
         }
       } catch (e) {
         console.error("Failed to load token", e);
@@ -39,21 +51,52 @@ function RootLayoutNav() {
 
   // 2. Role-Based Navigation Logic
   useEffect(() => {
-    if (!isReady) return; // Don't navigate until we've checked SecureStore
+    if (!isReady) return;
 
-    const inAuthGroup = (segments[0] as string) === '(auth)';
+    const inAuthGroup = segments[0] === '(auth)';
+    const inUserGroup = segments[0] === '(user)';
+    const inFormGroup = segments[0] === 'form';
+    const effectiveRole = role ?? 'User';
 
-    if (!token) {
-      // If no token, force user to Login
-      if (!inAuthGroup) {
-       router.replace('/(auth)/login' as any);
+    const hasValidTrainDetails = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(TRAIN_DETAILS_KEY);
+        if (!raw) return false;
+
+        const parsed = JSON.parse(raw);
+        if (parsed?.savedAt && Date.now() - parsed.savedAt < TRAIN_DETAILS_TTL_MS) {
+          return true;
+        }
+      } catch (error) {
+        console.error("Failed to validate train details", error);
       }
-    } else {
-      // If token exists, direct them to their specific folder
-      if (role === 'User') {
+
+      await AsyncStorage.multiRemove([TRAIN_DETAILS_KEY, 'deliveryStation']);
+      return false;
+    };
+
+    const checkInitialRoute = async () => {
+      if (!token) {
+        if (!inAuthGroup) {
+          router.replace('/(auth)/login' as any);
+        }
+        return;
+      }
+
+      if (inAuthGroup) {
         router.replace('/(user)' as any);
-      } 
-    }
+        return;
+      }
+
+      if (effectiveRole === 'User' && !inFormGroup) {
+        const hasDetails = await hasValidTrainDetails();
+        if (!hasDetails) {
+          router.replace('/form/train-details' as any);
+        }
+      }
+    };
+
+    checkInitialRoute();
   }, [token, role, isReady, segments]);
 
   // 3. Show a loading spinner while checking SecureStore
@@ -67,9 +110,9 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(user)" />
-    </Stack>
+      <Stack screenOptions={{ headerShown: false }} />
+      {/* <Stack.Screen name="(user)" /> */}
+      {/* </Stack> */}
     </ThemeProvider>
   );
 }
